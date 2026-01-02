@@ -1,0 +1,721 @@
+{% extends "base.html" %}
+
+{% block title %}User Profile - Research PDF File Renamer{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto py-8 px-4">
+    <!-- Header -->
+    <div class="mb-8">
+        <h1 class="text-3xl font-bold text-gray-900">User Profile</h1>
+        <p class="text-gray-600 mt-2">Manage your account settings and preferences</p>
+    </div>
+
+    <!-- Profile Card -->
+    <div class="bg-white rounded-lg shadow-lg p-6 mb-6">
+        <h2 class="text-2xl font-semibold text-gray-900 mb-6">Personal Information</h2>
+        <form id="profile-form" class="space-y-4">
+            <div class="grid md:grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
+                    <input type="text" id="profile-name" required
+                           class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-indigo-500 focus:border-indigo-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                    <input type="email" id="profile-email" readonly
+                           class="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-600">
+                    <p class="text-xs text-gray-500 mt-1">Email cannot be changed</p>
+                </div>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Account Status</label>
+                <div id="account-status" class="mt-2"></div>
+            </div>
+            <div class="flex justify-end">
+                <button type="submit" id="save-profile-btn"
+                        class="bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700 transition font-medium">
+                    Save Changes
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Settings Card -->
+    <div class="bg-white rounded-lg shadow-lg p-6 mb-6">
+        <h2 class="text-2xl font-semibold text-gray-900 mb-6">Preferences</h2>
+        <form id="settings-form" class="space-y-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-2">Filename Format</label>
+                <select id="filename-format" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-indigo-500 focus:border-indigo-500">
+                    <option value="Author_Year_Journal_Keywords">Author_Year_Journal_Keywords</option>
+                    <option value="Author_Year_Title">Author_Year_Title</option>
+                    <option value="Author_Year_Journal">Author_Year_Journal</option>
+                    <option value="Year_Author_Title">Year_Author_Title</option>
+                    <option value="Custom">Custom Format</option>
+                </select>
+                <div id="custom-format-container" class="mt-2 hidden">
+                    <!-- Filename Format Builder -->
+                    <div class="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                        <h3 class="text-sm font-semibold text-gray-700 mb-3">Build Your Custom Format</h3>
+
+                        <!-- Available Components -->
+                        <div class="mb-4">
+                            <label class="block text-xs font-medium text-gray-600 mb-2">Available Components</label>
+                            <div id="available-components" class="grid grid-cols-2 gap-2">
+                                <!-- Author Components -->
+                                <div class="space-y-1">
+                                    <p class="text-xs font-medium text-gray-600">Author Names:</p>
+                                    <div class="space-y-1">
+                                        <div class="component-item bg-white border border-gray-300 rounded px-2 py-1 text-xs cursor-move hover:bg-gray-100" data-component="firstauthor_firstname">
+                                            <i class="fas fa-user mr-1 text-blue-500"></i>First Author First Name
+                                        </div>
+                                        <div class="component-item bg-white border border-gray-300 rounded px-2 py-1 text-xs cursor-move hover:bg-gray-100" data-component="firstauthor_lastname">
+                                            <i class="fas fa-user mr-1 text-blue-500"></i>First Author Last Name
+                                        </div>
+                                        <div class="component-item bg-white border border-gray-300 rounded px-2 py-1 text-xs cursor-move hover:bg-gray-100" data-component="lastauthor_firstname">
+                                            <i class="fas fa-users mr-1 text-blue-500"></i>Last Author First Name
+                                        </div>
+                                        <div class="component-item bg-white border border-gray-300 rounded px-2 py-1 text-xs cursor-move hover:bg-gray-100" data-component="lastauthor_lastname">
+                                            <i class="fas fa-users mr-1 text-blue-500"></i>Last Author Last Name
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Other Components -->
+                                <div class="space-y-1">
+                                    <p class="text-xs font-medium text-gray-600">Other Components:</p>
+                                    <div class="space-y-1">
+                                        <div class="component-item bg-white border border-gray-300 rounded px-2 py-1 text-xs cursor-move hover:bg-gray-100" data-component="year">
+                                            <i class="fas fa-calendar mr-1 text-green-500"></i>Year
+                                        </div>
+                                        <div class="component-item bg-white border border-gray-300 rounded px-2 py-1 text-xs cursor-move hover:bg-gray-100" data-component="journal">
+                                            <i class="fas fa-book mr-1 text-purple-500"></i>Journal
+                                        </div>
+                                        <div class="component-item bg-white border border-gray-300 rounded px-2 py-1 text-xs cursor-move hover:bg-gray-100" data-component="keywords">
+                                            <i class="fas fa-tags mr-1 text-orange-500"></i>Keywords
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Custom Tag Input -->
+                        <div class="mb-4">
+                            <label class="block text-xs font-medium text-gray-600 mb-2">Custom Tag</label>
+                            <div class="flex gap-2">
+                                <input type="text" id="custom-tag-input" placeholder="Enter custom text (e.g., MyResearch)"
+                                       class="flex-1 px-2 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:ring-indigo-500 focus:border-indigo-500">
+                                <button type="button" id="add-custom-tag" class="bg-indigo-600 text-white px-3 py-1 rounded text-xs hover:bg-indigo-700 transition">
+                                    <i class="fas fa-plus mr-1"></i>Add Tag
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Selected Format -->
+                        <div class="mb-4">
+                            <div class="flex justify-between items-center mb-2">
+                                <label class="text-xs font-medium text-gray-600">Your Format (drag to reorder)</label>
+                                <button type="button" id="reset-format" class="text-xs text-red-600 hover:text-red-800 transition">
+                                    <i class="fas fa-undo mr-1"></i>Reset
+                                </button>
+                            </div>
+                            <div id="selected-format" class="min-h-[60px] bg-white border-2 border-dashed border-gray-300 rounded-lg p-3">
+                                <div id="format-items" class="space-y-2">
+                                    <!-- Format items will be added here -->
+                                </div>
+                                <div id="empty-format-message" class="text-center text-gray-400 text-xs py-4">
+                                    Drag components here to build your format
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Preview -->
+                        <div class="mb-4">
+                            <label class="block text-xs font-medium text-gray-600 mb-2">Preview</label>
+                            <div class="bg-white border border-gray-300 rounded px-3 py-2 text-sm">
+                                <code id="format-preview">Your filename will appear here</code>
+                            </div>
+                        </div>
+
+                        <!-- Hidden input for form submission -->
+                        <input type="hidden" id="custom-format" name="custom_filename_format">
+                    </div>
+                </div>
+            </div>
+            <div class="flex items-center">
+                <input type="checkbox" id="auto-download" class="mr-2" checked>
+                <label for="auto-download" class="text-sm text-gray-700">Automatically download processed files</label>
+            </div>
+            <div class="flex justify-end">
+                <button type="submit" id="save-settings-btn"
+                        class="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 transition font-medium">
+                    Save Settings
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Usage Statistics Card -->
+    <div class="bg-white rounded-lg shadow-lg p-6">
+        <h2 class="text-2xl font-semibold text-gray-900 mb-6">Usage Statistics</h2>
+        <div id="usage-stats-content" class="space-y-4">
+            <div class="text-center py-8 text-gray-500">
+                <i class="fas fa-spinner animate-spin text-2xl mb-2"></i>
+                <p>Loading statistics...</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Toast Notification -->
+<div id="toast" class="fixed bottom-4 right-4 hidden z-50">
+    <div class="bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg flex items-center">
+        <i class="fas fa-check-circle mr-2"></i>
+        <span id="toast-message">Success!</span>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let currentUser = null;
+
+    // Load user profile
+    async function loadProfile() {
+        try {
+            const token = localStorage.getItem('auth_token');
+            if (!token) {
+                window.location.href = '/';
+                return;
+            }
+
+            const response = await axios.get('/api/auth/me', {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+
+            currentUser = response.data.user;
+
+            // Update form fields
+            document.getElementById('profile-name').value = currentUser.name;
+            document.getElementById('profile-email').value = currentUser.email;
+
+            // Update account status
+            const statusEl = document.getElementById('account-status');
+            if (currentUser.is_approved) {
+                statusEl.innerHTML = `
+                    <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">
+                        <i class="fas fa-check-circle mr-1"></i>
+                        Approved Account
+                    </span>
+                `;
+            } else {
+                statusEl.innerHTML = `
+                    <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-yellow-100 text-yellow-800">
+                        <i class="fas fa-clock mr-1"></i>
+                        Pending Approval
+                    </span>
+                `;
+            }
+
+            // Load settings and statistics
+            try {
+                loadSettings();
+            } catch (error) {
+                console.error('Error loading settings:', error);
+            }
+            try {
+                loadUsageStats();
+            } catch (error) {
+                console.error('Error loading usage stats:', error);
+            }
+
+        } catch (error) {
+            console.error('Error loading profile:', error);
+            showToast('Error loading profile', 'error');
+        }
+    }
+
+    // Load user settings
+    async function loadSettings() {
+        try {
+            const token = localStorage.getItem('auth_token');
+            if (!token) {
+                console.log('No token found, skipping settings load');
+                return;
+            }
+
+            const response = await axios.get('/api/auth/settings', {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+
+            const settings = response.data.settings;
+            document.getElementById('filename-format').value = settings.filename_format || 'Author_Year_Journal_Keywords';
+
+            if (settings.filename_format === 'Custom') {
+                document.getElementById('custom-format-container').classList.remove('hidden');
+
+                // Parse the custom format and rebuild the drag-and-drop interface
+                if (settings.custom_filename_format) {
+                    try {
+                        parseAndLoadCustomFormat(settings.custom_filename_format);
+                    } catch (e) {
+                        console.error('Error loading custom format:', e);
+                        // Don't let this break the whole page
+                    }
+                }
+            }
+
+            document.getElementById('auto-download').checked = settings.auto_download !== false;
+        } catch (error) {
+            console.error('Error loading settings:', error);
+            // Don't let settings error prevent usage stats from loading
+        }
+    }
+
+    // Load usage statistics
+    async function loadUsageStats() {
+        try {
+            const token = localStorage.getItem('auth_token');
+            if (!token) {
+                console.log('No authentication token found for usage stats');
+                return;
+            }
+
+            const response = await axios.get('/api/usage-stats', {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+            const stats = response.data;
+
+            const statsContent = document.getElementById('usage-stats-content');
+            statsContent.innerHTML = `
+                <div class="grid md:grid-cols-3 gap-4">
+                    <div class="text-center p-4 bg-blue-50 rounded-lg">
+                        <div class="text-3xl font-bold text-blue-600">${stats.total_submissions}</div>
+                        <div class="text-sm text-gray-600 mt-1">Total Submissions</div>
+                    </div>
+                    <div class="text-center p-4 bg-green-50 rounded-lg">
+                        <div class="text-3xl font-bold text-green-600">${stats.total_files_processed}</div>
+                        <div class="text-sm text-gray-600 mt-1">Files Processed</div>
+                    </div>
+                    <div class="text-center p-4 bg-purple-50 rounded-lg">
+                        <div class="text-3xl font-bold text-purple-600">${stats.max_files_per_submission}</div>
+                        <div class="text-sm text-gray-600 mt-1">Max Files per Upload</div>
+                    </div>
+                </div>
+
+                ${stats.recent_submissions.length > 0 ? `
+                    <div class="mt-6">
+                        <h3 class="text-lg font-semibold text-gray-900 mb-3">Recent Activity</h3>
+                        <div class="space-y-2">
+                            ${stats.recent_submissions.map(sub => `
+                                <div class="flex justify-between items-center p-3 bg-gray-50 rounded">
+                                    <div>
+                                        <p class="text-sm font-medium">${sub.files_processed} files</p>
+                                        <p class="text-xs text-gray-500">${new Date(sub.timestamp).toLocaleString()}</p>
+                                    </div>
+                                    <span class="text-xs text-gray-500">IP: ${sub.ip_address}</span>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                ` : ''}
+            `;
+        } catch (error) {
+            console.error('Error loading usage stats:', error);
+            const statsContent = document.getElementById('usage-stats-content');
+            statsContent.innerHTML = '<p class="text-center text-gray-500">No statistics available</p>';
+        }
+    }
+
+    // Save profile
+    document.getElementById('profile-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        const saveBtn = document.getElementById('save-profile-btn');
+        const originalText = saveBtn.innerHTML;
+        saveBtn.disabled = true;
+        saveBtn.innerHTML = '<i class="fas fa-spinner animate-spin mr-2"></i>Saving...';
+
+        try {
+            const token = localStorage.getItem('auth_token');
+            const response = await axios.post('/api/auth/update-profile', {
+                name: document.getElementById('profile-name').value
+            }, {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+
+            showToast(response.data.message, 'success');
+            currentUser.name = document.getElementById('profile-name').value;
+
+        } catch (error) {
+            const errorMsg = error.response?.data?.error || 'Failed to update profile';
+            showToast(errorMsg, 'error');
+        } finally {
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = originalText;
+        }
+    });
+
+    // Save settings
+    document.getElementById('settings-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        const saveBtn = document.getElementById('save-settings-btn');
+        const originalText = saveBtn.innerHTML;
+        saveBtn.disabled = true;
+        saveBtn.innerHTML = '<i class="fas fa-spinner animate-spin mr-2"></i>Saving...';
+
+        try {
+            const token = localStorage.getItem('auth_token');
+            const format = document.getElementById('filename-format').value;
+            const customFormat = document.getElementById('custom-format').value;
+
+            const settings = {
+                filename_format: format,
+                custom_filename_format: customFormat,
+                auto_download: document.getElementById('auto-download').checked
+            };
+
+            const response = await axios.post('/api/auth/update-settings', settings, {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+
+            // Also save to localStorage as fallback
+            localStorage.setItem('user_settings', JSON.stringify(settings));
+            showToast(response.data.message, 'success');
+
+        } catch (error) {
+            const errorMsg = error.response?.data?.error || 'Failed to save settings';
+            showToast(errorMsg, 'error');
+        } finally {
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = originalText;
+        }
+    });
+
+    // Handle filename format change
+    document.getElementById('filename-format').addEventListener('change', (e) => {
+        const customContainer = document.getElementById('custom-format-container');
+        if (e.target.value === 'Custom') {
+            customContainer.classList.remove('hidden');
+        } else {
+            customContainer.classList.add('hidden');
+        }
+    });
+
+    // Show toast notification
+    function showToast(message, type = 'success') {
+        const toast = document.getElementById('toast');
+        const toastMessage = document.getElementById('toast-message');
+
+        toastMessage.textContent = message;
+        toast.classList.remove('hidden');
+
+        // Update toast color based on type
+        const toastDiv = toast.querySelector('div');
+        toastDiv.className = `px-6 py-3 rounded-lg shadow-lg flex items-center ${
+            type === 'success' ? 'bg-green-500 text-white' :
+            type === 'error' ? 'bg-red-500 text-white' :
+            'bg-blue-500 text-white'
+        }`;
+
+        // Hide toast after 3 seconds
+        setTimeout(() => {
+            toast.classList.add('hidden');
+        }, 3000);
+    }
+
+    // Filename Format Builder functionality
+    let formatItems = [];
+
+    // Initialize format builder
+    function initializeFormatBuilder() {
+        setupDragAndDrop();
+        setupCustomTagInput();
+        setupResetButton();
+        updateFormatDisplay();
+    }
+
+    // Setup drag and drop functionality
+    function setupDragAndDrop() {
+        const components = document.querySelectorAll('.component-item');
+        const selectedFormat = document.getElementById('selected-format');
+        const formatItemsContainer = document.getElementById('format-items');
+
+        // Make components draggable
+        components.forEach(component => {
+            component.draggable = true;
+
+            component.addEventListener('dragstart', (e) => {
+                e.dataTransfer.effectAllowed = 'copy';
+                e.dataTransfer.setData('text/plain', component.dataset.component);
+                e.dataTransfer.setData('text/html', component.outerHTML);
+                component.classList.add('opacity-50');
+            });
+
+            component.addEventListener('dragend', (e) => {
+                component.classList.remove('opacity-50');
+            });
+        });
+
+        // Setup drop zone
+        selectedFormat.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'copy';
+            selectedFormat.classList.add('bg-blue-50', 'border-blue-400');
+        });
+
+        selectedFormat.addEventListener('dragleave', (e) => {
+            if (e.target === selectedFormat) {
+                selectedFormat.classList.remove('bg-blue-50', 'border-blue-400');
+            }
+        });
+
+        selectedFormat.addEventListener('drop', (e) => {
+            e.preventDefault();
+            selectedFormat.classList.remove('bg-blue-50', 'border-blue-400');
+
+            const componentType = e.dataTransfer.getData('text/plain');
+            const componentHTML = e.dataTransfer.getData('text/html');
+
+            addFormatItem(componentType, componentHTML);
+        });
+
+        // Setup reordering within format items
+        formatItemsContainer.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            const draggingItem = formatItemsContainer.querySelector('.dragging');
+            const afterElement = getDragAfterElement(formatItemsContainer, e.clientY);
+
+            if (afterElement == null) {
+                formatItemsContainer.appendChild(draggingItem);
+            } else {
+                formatItemsContainer.insertBefore(draggingItem, afterElement);
+            }
+        });
+    }
+
+    // Add item to format
+    function addFormatItem(componentType, componentHTML) {
+        if (formatItems.some(item => item.type === componentType && componentType.startsWith('custom_') === false)) {
+            showToast('This component is already in your format', 'error');
+            return;
+        }
+
+        const itemId = Date.now().toString();
+        const item = {
+            id: itemId,
+            type: componentType,
+            display: componentHTML
+        };
+
+        formatItems.push(item);
+
+        const formatItemElement = createFormatItemElement(item);
+        document.getElementById('format-items').appendChild(formatItemElement);
+
+        updateFormatDisplay();
+    }
+
+    // Create format item element
+    function createFormatItemElement(item) {
+        const div = document.createElement('div');
+        div.className = 'format-item bg-indigo-50 border border-indigo-200 rounded px-3 py-2 flex items-center justify-between cursor-move hover:bg-indigo-100 transition';
+        div.draggable = true;
+        div.dataset.itemId = item.id;
+
+        div.innerHTML = `
+            <div class="flex items-center flex-1">
+                <i class="fas fa-grip-vertical mr-2 text-gray-400"></i>
+                ${item.display}
+            </div>
+            <button type="button" onclick="removeFormatItem('${item.id}')" class="text-red-500 hover:text-red-700 transition">
+                <i class="fas fa-times"></i>
+            </button>
+        `;
+
+        // Add drag events for reordering
+        div.addEventListener('dragstart', (e) => {
+            div.classList.add('dragging');
+            e.dataTransfer.effectAllowed = 'move';
+        });
+
+        div.addEventListener('dragend', (e) => {
+            div.classList.remove('dragging');
+            updateFormatOrder();
+        });
+
+        return div;
+    }
+
+    // Remove format item
+    function removeFormatItem(itemId) {
+        formatItems = formatItems.filter(item => item.id !== itemId);
+        const element = document.querySelector(`[data-item-id="${itemId}"]`);
+        if (element) {
+            element.remove();
+        }
+        updateFormatDisplay();
+    }
+
+    // Update format order after dragging
+    function updateFormatOrder() {
+        const elements = document.querySelectorAll('#format-items .format-item');
+        const newOrder = [];
+
+        elements.forEach(element => {
+            const itemId = element.dataset.itemId;
+            const item = formatItems.find(i => i.id === itemId);
+            if (item) {
+                newOrder.push(item);
+            }
+        });
+
+        formatItems = newOrder;
+        updateFormatDisplay();
+    }
+
+    // Get element after which to insert dragged item
+    function getDragAfterElement(container, y) {
+        const draggableElements = [...container.querySelectorAll('.format-item:not(.dragging)')];
+
+        return draggableElements.reduce((closest, child) => {
+            const box = child.getBoundingClientRect();
+            const offset = y - box.top - box.height / 2;
+
+            if (offset < 0 && offset > closest.offset) {
+                return { offset: offset, element: child };
+            } else {
+                return closest;
+            }
+        }, { offset: Number.NEGATIVE_INFINITY }).element;
+    }
+
+    // Setup custom tag input
+    function setupCustomTagInput() {
+        const input = document.getElementById('custom-tag-input');
+        const addButton = document.getElementById('add-custom-tag');
+
+        addButton.addEventListener('click', () => {
+            const tagText = input.value.trim();
+            if (tagText) {
+                const componentType = 'custom_' + Date.now();
+                const componentHTML = `<i class="fas fa-tag mr-1 text-indigo-500"></i>${tagText}`;
+                addFormatItem(componentType, componentHTML);
+                input.value = '';
+            }
+        });
+
+        input.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                addButton.click();
+            }
+        });
+    }
+
+    // Setup reset button
+    function setupResetButton() {
+        document.getElementById('reset-format').addEventListener('click', () => {
+            formatItems = [];
+            document.getElementById('format-items').innerHTML = '';
+            updateFormatDisplay();
+        });
+    }
+
+    // Parse and load existing custom format
+    function parseAndLoadCustomFormat(formatString) {
+        formatItems = [];
+        document.getElementById('format-items').innerHTML = '';
+
+        // Split by underscores to get components
+        const parts = formatString.split('_');
+
+        parts.forEach(part => {
+            let componentType, componentHTML;
+
+            // Check if it's a known variable
+            if (part.startsWith('{') && part.endsWith('}')) {
+                componentType = part.slice(1, -1);
+
+                // Map component type to display HTML
+                const componentMap = {
+                    'firstauthor_firstname': '<i class="fas fa-user mr-1 text-blue-500"></i>First Author First Name',
+                    'firstauthor_lastname': '<i class="fas fa-user mr-1 text-blue-500"></i>First Author Last Name',
+                    'lastauthor_firstname': '<i class="fas fa-users mr-1 text-blue-500"></i>Last Author First Name',
+                    'lastauthor_lastname': '<i class="fas fa-users mr-1 text-blue-500"></i>Last Author Last Name',
+                    'year': '<i class="fas fa-calendar mr-1 text-green-500"></i>Year',
+                    'journal': '<i class="fas fa-book mr-1 text-purple-500"></i>Journal',
+                    'keywords': '<i class="fas fa-tags mr-1 text-orange-500"></i>Keywords'
+                };
+
+                componentHTML = componentMap[componentType];
+                if (!componentHTML) return; // Skip unknown components
+            } else {
+                // It's a custom tag
+                componentType = 'custom_' + Date.now() + Math.random();
+                componentHTML = `<i class="fas fa-tag mr-1 text-indigo-500"></i>${part}`;
+            }
+
+            if (componentHTML) {
+                const itemId = Date.now().toString() + Math.random();
+                const item = {
+                    id: itemId,
+                    type: componentType,
+                    display: componentHTML
+                };
+
+                formatItems.push(item);
+                const formatItemElement = createFormatItemElement(item);
+                document.getElementById('format-items').appendChild(formatItemElement);
+            }
+        });
+
+        updateFormatDisplay();
+    }
+
+    // Update format display and preview
+    function updateFormatDisplay() {
+        const emptyMessage = document.getElementById('empty-format-message');
+        const formatItemsContainer = document.getElementById('format-items');
+        const preview = document.getElementById('format-preview');
+        const hiddenInput = document.getElementById('custom-format');
+
+        if (formatItems.length === 0) {
+            emptyMessage.style.display = 'block';
+            preview.textContent = 'Your filename will appear here';
+            hiddenInput.value = '';
+        } else {
+            emptyMessage.style.display = 'none';
+
+            // Generate format string
+            const formatParts = formatItems.map(item => {
+                if (item.type.startsWith('custom_')) {
+                    return item.display.match(/>([^<]+)</)[1].trim();
+                }
+                return `{${item.type}}`;
+            });
+
+            const formatString = formatParts.join('_');
+            preview.textContent = formatString + '.pdf';
+            hiddenInput.value = formatString;
+        }
+    }
+
+    // Initialize page
+    document.addEventListener('DOMContentLoaded', () => {
+        loadProfile();
+        initializeFormatBuilder();
+    });
+</script>
+{% endblock %}

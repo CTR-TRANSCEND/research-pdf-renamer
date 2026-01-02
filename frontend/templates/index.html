@@ -1,0 +1,460 @@
+{% extends "base.html" %}
+
+{% block title %}Research PDF File Renamer - AI-Powered PDF Renaming{% endblock %}
+
+{% block content %}
+<div class="grid md:grid-cols-2 gap-8">
+    <!-- Left Column - Upload -->
+    <div>
+        <div class="bg-white rounded-lg shadow-lg p-6">
+            <h2 class="text-2xl font-bold text-gray-900 mb-4">
+                <i class="fas fa-upload mr-2"></i>Upload PDF Files
+            </h2>
+
+            <!-- User Limits Info -->
+            <div id="limits-info" class="mb-4 p-4 bg-blue-50 rounded-lg">
+                <p class="text-sm text-blue-800">
+                    <i class="fas fa-info-circle mr-1"></i>
+                    <span id="limits-text">Checking your limits...</span>
+                </p>
+            </div>
+
+            <!-- Upload Options -->
+            <div id="upload-options" class="mb-4 flex gap-2">
+                <button id="files-mode-btn" class="flex-1 bg-indigo-600 text-white px-3 py-2 rounded-lg text-sm transition">
+                    <i class="fas fa-file-pdf mr-1"></i>Files
+                </button>
+                <button id="folder-mode-btn" class="flex-1 bg-gray-200 text-gray-700 px-3 py-2 rounded-lg text-sm transition">
+                    <i class="fas fa-folder mr-1"></i>Folder (Registered users only)
+                </button>
+            </div>
+
+            <!-- File Drop Zone -->
+            <div id="files-drop-zone" class="file-drop-zone border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-gray-400 cursor-pointer">
+                <i class="fas fa-cloud-upload-alt text-4xl text-gray-400 mb-4"></i>
+                <p class="text-lg text-gray-600 mb-2">Drag and drop your PDF files here</p>
+                <p class="text-sm text-gray-500 mb-4">or</p>
+                <button class="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition">
+                    Browse Files
+                </button>
+                <input type="file" id="file-input" class="hidden" multiple accept=".pdf">
+            </div>
+
+            <!-- Folder Drop Zone (Hidden by default) -->
+            <div id="folder-drop-zone" class="file-drop-zone border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-gray-400 cursor-pointer hidden">
+                <i class="fas fa-folder-tree text-4xl text-gray-400 mb-4"></i>
+                <p class="text-lg text-gray-600 mb-2">Drag and drop a folder with PDF files here</p>
+                <p class="text-sm text-gray-500 mb-4">Folder structure will be preserved</p>
+                <button class="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition">
+                    Select Folder
+                </button>
+                <input type="file" id="folder-input" class="hidden" webkitdirectory multiple>
+            </div>
+
+            <!-- Selected Files List -->
+            <div id="files-list" class="mt-4 space-y-2 hidden">
+                <h3 class="font-semibold text-gray-700">Selected Files:</h3>
+                <div id="files-container"></div>
+            </div>
+
+            <!-- Process Button -->
+            <button id="process-btn" class="w-full mt-6 bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700 transition disabled:bg-gray-400 disabled:cursor-not-allowed" disabled>
+                <i class="fas fa-magic mr-2"></i>Process Files
+            </button>
+        </div>
+
+    </div>
+
+    <!-- Right Column - Instructions & Features -->
+    <div class="space-y-6">
+        <!-- Instructions -->
+        <div class="bg-white rounded-lg shadow-lg p-6">
+            <h2 class="text-2xl font-bold text-gray-900 mb-4">
+                <i class="fas fa-question-circle mr-2"></i>How It Works
+            </h2>
+            <ol class="space-y-3 text-gray-700">
+                <li class="flex">
+                    <span class="bg-indigo-600 text-white rounded-full w-6 h-6 flex items-center justify-center mr-3 flex-shrink-0">1</span>
+                    <span>Upload your research PDF files (drag & drop or browse)</span>
+                </li>
+                <li class="flex">
+                    <span class="bg-indigo-600 text-white rounded-full w-6 h-6 flex items-center justify-center mr-3 flex-shrink-0">2</span>
+                    <span>AI extracts title, author, and year from the paper</span>
+                </li>
+                <li class="flex">
+                    <span class="bg-indigo-600 text-white rounded-full w-6 h-6 flex items-center justify-center mr-3 flex-shrink-0">3</span>
+                    <span>Files are automatically renamed to <code class="bg-gray-100 px-1">Author_Year_Journal_Keywords.pdf</code></span>
+                </li>
+                <li class="flex">
+                    <span class="bg-indigo-600 text-white rounded-full w-6 h-6 flex items-center justify-center mr-3 flex-shrink-0">4</span>
+                    <span>Download starts automatically (ZIP for multiple files)</span>
+                </li>
+                <li class="flex">
+                    <span class="bg-indigo-600 text-white rounded-full w-6 h-6 flex items-center justify-center mr-3 flex-shrink-0">5</span>
+                    <span>All uploaded PDF files will be removed from our server immediately</span>
+                </li>
+            </ol>
+        </div>
+
+        <!-- Features -->
+        <div class="bg-white rounded-lg shadow-lg p-6">
+            <h2 class="text-2xl font-bold text-gray-900 mb-4">
+                <i class="fas fa-star mr-2"></i>Features
+            </h2>
+            <div class="space-y-3">
+                <div class="flex items-start">
+                    <i class="fas fa-shield-alt text-green-600 mt-1 mr-3"></i>
+                    <div>
+                        <h3 class="font-semibold">Privacy First</h3>
+                        <p class="text-sm text-gray-600">Only text from first 1-2 pages is processed</p>
+                    </div>
+                </div>
+                <div class="flex items-start">
+                    <i class="fas fa-robot text-blue-600 mt-1 mr-3"></i>
+                    <div>
+                        <h3 class="font-semibold">AI-Powered</h3>
+                        <p class="text-sm text-gray-600">Uses GPT-4o-mini for accurate metadata extraction</p>
+                    </div>
+                </div>
+                <div class="flex items-start">
+                    <i class="fas fa-users text-purple-600 mt-1 mr-3"></i>
+                    <div>
+                        <h3 class="font-semibold">User Limits</h3>
+                        <p class="text-sm text-gray-600">Anonymous: 5 files × 5 times/day (25 total) | Registered: 30 files × 10 times/day (300 total)</p>
+                    </div>
+                </div>
+                <div class="flex items-start">
+                    <i class="fas fa-bolt text-yellow-600 mt-1 mr-3"></i>
+                    <div>
+                        <h3 class="font-semibold">Fast Processing</h3>
+                        <p class="text-sm text-gray-600">Batch processing for multiple files</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Register CTA -->
+        <div id="register-cta" class="bg-gradient-to-r from-indigo-500 to-purple-600 rounded-lg shadow-lg p-6 text-white hidden">
+            <h3 class="text-xl font-bold mb-2">Want Higher Limits?</h3>
+            <p class="mb-4">Register for an account to process up to 30 files at once!</p>
+            <button onclick="showRegisterModal()" class="bg-white text-indigo-600 px-4 py-2 rounded-lg font-semibold hover:bg-gray-100 transition">
+                Register Now
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Processing Modal (Unified Progress + Results) -->
+<div id="processing-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-40">
+    <div class="bg-white rounded-lg shadow-xl max-w-3xl w-full mx-4 max-h-[80vh] overflow-y-auto">
+        <div class="p-6">
+            <!-- Modal Header -->
+            <div class="flex justify-between items-start mb-4">
+                <h2 id="processing-modal-title" class="text-2xl font-bold text-gray-900">
+                    <i id="processing-modal-icon" class="fas fa-spinner fa-spin mr-2 text-indigo-600"></i>
+                    <span id="processing-modal-text">Processing Files...</span>
+                </h2>
+                <button id="processing-modal-close" onclick="closeProcessingModal()" class="text-gray-500 hover:text-gray-700 hidden">
+                    <i class="fas fa-times text-xl"></i>
+                </button>
+            </div>
+
+            <!-- Processing State -->
+            <div id="processing-state">
+                <!-- File Progress List -->
+                <div class="mb-4">
+                    <div id="modal-progress-list" class="space-y-2 max-h-60 overflow-y-auto"></div>
+                </div>
+
+                <!-- Overall Progress Bar -->
+                <div class="mt-4">
+                    <div class="bg-gray-200 rounded-full h-3">
+                        <div id="modal-overall-progress" class="bg-indigo-600 h-3 rounded-full transition-all duration-300" style="width: 0%"></div>
+                    </div>
+                    <p class="text-center text-sm text-gray-600 mt-2">
+                        <span id="modal-progress-text">Uploading files...</span>
+                    </p>
+                </div>
+            </div>
+
+            <!-- Complete State -->
+            <div id="complete-state" class="hidden">
+                <!-- Summary Statistics -->
+                <div id="summary-stats" class="mb-6 p-4 bg-gray-50 rounded-lg">
+                    <h3 class="text-lg font-semibold mb-3">Summary Statistics</h3>
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div class="text-center">
+                            <div id="stat-total" class="text-2xl font-bold text-blue-600">0</div>
+                            <div class="text-sm text-gray-600">Total Files</div>
+                        </div>
+                        <div class="text-center">
+                            <div id="stat-success" class="text-2xl font-bold text-green-600">0</div>
+                            <div class="text-sm text-gray-600">Successfully Renamed</div>
+                        </div>
+                        <div class="text-center">
+                            <div id="stat-failed" class="text-2xl font-bold text-red-600">0</div>
+                            <div class="text-sm text-gray-600">Failed</div>
+                        </div>
+                        <div class="text-center">
+                            <div id="stat-success-rate" class="text-2xl font-bold text-purple-600">0%</div>
+                            <div class="text-sm text-gray-600">Success Rate</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Results Content -->
+                <div id="results-content"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Login Modal -->
+<div id="login-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-40">
+    <div class="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
+        <div class="p-6">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-2xl font-bold text-gray-900">
+                    <i class="fas fa-sign-in-alt mr-2"></i>Login
+                </h2>
+                <button onclick="closeLoginModal()" class="text-gray-500 hover:text-gray-700">
+                    <i class="fas fa-times text-xl"></i>
+                </button>
+            </div>
+            <form id="login-form" onsubmit="handleLogin(event)">
+                <div class="mb-4">
+                    <label class="block text-gray-700 text-sm font-bold mb-2" for="login-email">
+                        Email
+                    </label>
+                    <input type="email" id="login-email" required
+                           class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-indigo-500"
+                           placeholder="your@email.com">
+                </div>
+                <div class="mb-4">
+                    <label class="block text-gray-700 text-sm font-bold mb-2" for="login-password">
+                        Password
+                    </label>
+                    <input type="password" id="login-password" required
+                           class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-indigo-500"
+                           placeholder="••••••••">
+                </div>
+                <div class="mb-6">
+                    <label class="flex items-center">
+                        <input type="checkbox" id="login-remember" class="mr-2">
+                        <span class="text-sm text-gray-700">Remember me</span>
+                    </label>
+                </div>
+                <button type="submit" id="login-btn"
+                        class="w-full bg-indigo-600 text-white py-2 px-4 rounded-lg hover:bg-indigo-700 transition font-semibold">
+                    Login
+                </button>
+            </form>
+            <div class="mt-6 text-center">
+                <p class="text-sm text-gray-600">
+                    Don't have an account?
+                    <a href="#" onclick="switchToRegister()" class="text-indigo-600 hover:text-indigo-800 font-semibold">
+                        Register here
+                    </a>
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Register Modal -->
+<div id="register-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-40">
+    <div class="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
+        <div class="p-6">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-2xl font-bold text-gray-900">
+                    <i class="fas fa-user-plus mr-2"></i>Register
+                </h2>
+                <button onclick="closeRegisterModal()" class="text-gray-500 hover:text-gray-700">
+                    <i class="fas fa-times text-xl"></i>
+                </button>
+            </div>
+            <form id="register-form" onsubmit="handleRegister(event)">
+                <div class="mb-4">
+                    <label class="block text-gray-700 text-sm font-bold mb-2" for="register-name">
+                        Full Name
+                    </label>
+                    <input type="text" id="register-name" required
+                           class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-indigo-500"
+                           placeholder="John Doe">
+                </div>
+                <div class="mb-4">
+                    <label class="block text-gray-700 text-sm font-bold mb-2" for="register-email">
+                        Email
+                    </label>
+                    <input type="email" id="register-email" required
+                           class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-indigo-500"
+                           placeholder="your@email.com">
+                </div>
+                <div class="mb-4">
+                    <label class="block text-gray-700 text-sm font-bold mb-2" for="register-password">
+                        Password
+                    </label>
+                    <input type="password" id="register-password" required
+                           class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-indigo-500"
+                           placeholder="••••••••">
+                    <p class="text-xs text-gray-500 mt-1">Minimum 8 characters, include uppercase, lowercase, number and special character</p>
+                </div>
+                <div class="mb-4">
+                    <label class="block text-gray-700 text-sm font-bold mb-2" for="register-confirm-password">
+                        Confirm Password
+                    </label>
+                    <input type="password" id="register-confirm-password" required
+                           class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-indigo-500"
+                           placeholder="••••••••">
+                </div>
+                <div class="mb-6">
+                    <label class="flex items-center">
+                        <input type="checkbox" id="register-terms" required class="mr-2">
+                        <span class="text-sm text-gray-700">
+                            I agree to the <a href="/terms" target="_blank" class="text-indigo-600 hover:text-indigo-800 underline">terms and conditions</a>
+                        </span>
+                    </label>
+                </div>
+                <button type="submit" id="register-btn"
+                        class="w-full bg-green-600 text-white py-2 px-4 rounded-lg hover:bg-green-700 transition font-semibold">
+                    Register
+                </button>
+            </form>
+            <div class="mt-6 text-center">
+                <p class="text-sm text-gray-600">
+                    Already have an account?
+                    <a href="#" onclick="switchToLogin()" class="text-indigo-600 hover:text-indigo-800 font-semibold">
+                        Login here
+                    </a>
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- User Profile Menu (hidden by default) -->
+<div id="user-menu" class="hidden fixed top-4 right-4 bg-white rounded-lg shadow-lg p-4 z-30 min-w-[200px]">
+    <div class="flex items-center mb-3">
+        <div class="w-10 h-10 bg-indigo-600 rounded-full flex items-center justify-center text-white font-bold mr-3">
+            <span id="user-initials">U</span>
+        </div>
+        <div>
+            <p class="font-semibold text-gray-900" id="user-name">User</p>
+            <p class="text-sm text-gray-600" id="user-email">user@email.com</p>
+        </div>
+    </div>
+    <div class="border-t pt-3">
+        <button onclick="window.location.href='/profile'" class="w-full text-left px-2 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded">
+            <i class="fas fa-user mr-2"></i>Profile
+        </button>
+        <button onclick="showUsageStats()" class="w-full text-left px-2 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded">
+            <i class="fas fa-chart-bar mr-2"></i>Usage Stats
+        </button>
+        <button id="admin-panel-link" onclick="window.location.href='/admin'" class="w-full text-left px-2 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded hidden">
+            <i class="fas fa-cog mr-2"></i>Admin Panel
+        </button>
+        <button onclick="showChangePasswordModal()" class="w-full text-left px-2 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded">
+            <i class="fas fa-key mr-2"></i>Change Password
+        </button>
+        <button onclick="logout()" class="w-full text-left px-2 py-2 text-sm text-red-600 hover:bg-red-50 rounded">
+            <i class="fas fa-sign-out-alt mr-2"></i>Logout
+        </button>
+    </div>
+</div>
+
+<!-- Change Password Modal -->
+<div id="change-password-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-40">
+    <div class="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
+        <div class="p-6">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-2xl font-bold text-gray-900">
+                    <i class="fas fa-key mr-2"></i>Change Password
+                </h2>
+                <button onclick="closeChangePasswordModal()" class="text-gray-500 hover:text-gray-700">
+                    <i class="fas fa-times text-xl"></i>
+                </button>
+            </div>
+            <form id="change-password-form" onsubmit="handleChangePassword(event)">
+                <div class="mb-4">
+                    <label class="block text-gray-700 text-sm font-bold mb-2" for="current-password">
+                        Current Password
+                    </label>
+                    <input type="password" id="current-password" required
+                           class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-indigo-500"
+                           placeholder="••••••••">
+                </div>
+                <div class="mb-4">
+                    <label class="block text-gray-700 text-sm font-bold mb-2" for="new-password">
+                        New Password
+                    </label>
+                    <input type="password" id="new-password" required
+                           class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-indigo-500"
+                           placeholder="••••••••">
+                </div>
+                <div class="mb-6">
+                    <label class="block text-gray-700 text-sm font-bold mb-2" for="confirm-new-password">
+                        Confirm New Password
+                    </label>
+                    <input type="password" id="confirm-new-password" required
+                           class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-indigo-500"
+                           placeholder="••••••••">
+                </div>
+                <button type="submit" id="change-password-btn"
+                        class="w-full bg-indigo-600 text-white py-2 px-4 rounded-lg hover:bg-indigo-700 transition font-semibold">
+                    Change Password
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Folder Restriction Modal -->
+<div id="folder-restriction-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-40">
+    <div class="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
+        <div class="p-6">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-2xl font-bold text-gray-900">
+                    <i class="fas fa-folder mr-2 text-indigo-600"></i>Folder Upload Restricted
+                </h2>
+                <button onclick="closeFolderRestrictionModal()" class="text-gray-500 hover:text-gray-700">
+                    <i class="fas fa-times text-xl"></i>
+                </button>
+            </div>
+            <div class="mb-6">
+                <div class="bg-yellow-50 border-l-4 border-yellow-500 p-4 mb-4">
+                    <p class="text-yellow-800 font-semibold">
+                        <i class="fas fa-info-circle mr-2"></i>Approved Registered Users Only
+                    </p>
+                    <p class="text-yellow-700 mt-2">
+                        The folder upload feature with structure preservation is only available to approved registered users.
+                    </p>
+                </div>
+                <div class="space-y-2 text-gray-700">
+                    <p><i class="fas fa-check text-green-500 mr-2"></i>Anonymous users can upload up to 5 individual files</p>
+                    <p><i class="fas fa-check text-green-500 mr-2"></i>Registered users can upload up to 30 individual files</p>
+                    <p><i class="fas fa-lock text-orange-500 mr-2"></i>Folder upload requires approved registration</p>
+                </div>
+            </div>
+            <div class="flex space-x-3">
+                {% if not current_user or not current_user.is_authenticated %}
+                    <button onclick="showRegisterModal()" class="flex-1 bg-indigo-600 text-white py-2 px-4 rounded-lg hover:bg-indigo-700 transition font-semibold">
+                        Register Account
+                    </button>
+                    <button onclick="closeFolderRestrictionModal()" class="flex-1 bg-gray-300 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-400 transition font-semibold">
+                        Use Individual Files
+                    </button>
+                {% elif current_user and current_user.is_authenticated and not current_user.is_approved %}
+                    <button onclick="closeFolderRestrictionModal()" class="w-full bg-gray-300 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-400 transition font-semibold">
+                        Use Individual Files
+                    </button>
+                {% else %}
+                    <button onclick="closeFolderRestrictionModal()" class="w-full bg-gray-300 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-400 transition font-semibold">
+                        Close
+                    </button>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
