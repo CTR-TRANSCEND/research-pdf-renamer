@@ -40,12 +40,22 @@ python run.py
 
 Access the application at http://localhost:5000
 
-### Default Admin Account
+### Admin Setup
 
-- **Email:** admin@example.com
-- **Password:** admin123
+For first-time setup, create an admin account using one of these methods:
 
-(Change this in production!)
+**Method 1: Web Interface (Recommended)**
+1. Visit http://localhost:5000 in your browser
+2. Click "Register" to create a new account
+3. The first user needs to be approved as admin via CLI (see Method 2)
+
+**Method 2: Command Line**
+```bash
+# Create admin user via CLI
+flask setup-admin --email=admin@example.com --password=secure_password
+```
+
+**Security Note:** Never use default credentials in production. Always use strong, unique passwords.
 
 ## Project Structure
 
