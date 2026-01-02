@@ -9,6 +9,9 @@ ENV/
 env/
 .venv
 
+# Archive (non-essential development artifacts)
+archive/
+
 # Flask
 instance/
 .webassets-cache
