@@ -45,4 +45,4 @@ Thumbs.db
 logs/
 
 # Node modules (if using npm)
-node_modules/
+node_modules/archive/
