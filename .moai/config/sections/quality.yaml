@@ -1,17 +1,31 @@
-# Quality & Constitution Settings
-# TDD enforcement and report generation
-
 constitution:
-  enforce_tdd: true           # Require tests before implementation
-  test_coverage_target: 85    # Minimum test coverage percentage (recommended: 85%)
-
-  # Quality principles (TRUST 5 framework)
+  enforce_tdd: true
+  test_coverage_target: 85
   principles:
     simplicity:
-      max_projects: 5         # Maximum concurrent projects
-
+      max_projects: 5
+      max_parallel_tasks: 5
+  tdd_mode: warn
+  tdd_by_language:
+    Python: warn
+    TypeScript: warn
+    JavaScript: warn
+  coverage_exemptions:
+    enabled: false
+    require_justification: true
+    max_exempt_percentage: 5
+  test_quality:
+    specification_based: true
+    meaningful_assertions: true
+    avoid_implementation_coupling: true
+    mutation_testing_enabled: false
 report_generation:
-  enabled: true               # Enable report generation
-  auto_create: false          # Auto-create full reports (false = minimal)
-  warn_user: true             # Ask before generating reports
-  user_choice: Minimal        # Default: Minimal, Full, None
+  enabled: true
+  auto_create: false
+  warn_user: true
+  user_choice: Minimal
+tag_validation:
+  enabled: true
+  mode: enforce
+  check_spec_exists: true
+  max_tags_per_file: 100
