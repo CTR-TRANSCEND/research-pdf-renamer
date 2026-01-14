@@ -31,14 +31,11 @@
             </div>
         </div>
         <div class="border-t pt-3">
-            <button onclick="window.location.href='/profile'" class="w-full text-left px-2 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded">
+            <a href="{{ url_for('main.profile') }}" class="block w-full text-left px-2 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded">
                 <i class="fas fa-user mr-2"></i>Profile
-            </button>
+            </a>
             <button onclick="showUsageStats()" class="w-full text-left px-2 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded">
                 <i class="fas fa-chart-bar mr-2"></i>Usage Stats
-            </button>
-            <button onclick="window.location.href='/'" class="w-full text-left px-2 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded">
-                <i class="fas fa-home mr-2"></i>Home
             </button>
             <button onclick="showChangePasswordModal()" class="w-full text-left px-2 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded">
                 <i class="fas fa-key mr-2"></i>Change Password
@@ -220,41 +217,112 @@
                     <select id="llm-provider" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-indigo-500">
                         <option value="">Select Provider</option>
                     </select>
+                    <p class="text-sm text-gray-500 mt-1">Choose your LLM service provider</p>
+                </div>
+
+                <!-- API Key Configuration (shown for all providers) -->
+                <div id="api-key-container">
+                    <label id="api-key-config-label" class="block text-sm font-medium text-gray-700 mb-2">API Key Configuration</label>
+
+                    <!-- API Key Status -->
+                    <div id="api-key-status" class="mb-3">
+                        <!-- Will be populated dynamically based on key source -->
+                    </div>
+
+                    <!-- API Key Input (shown only for OpenAI provider) -->
+                    <div id="api-key-input-container" class="mb-3">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Enter API Key</label>
+                        <div class="flex gap-2">
+                            <input type="password" id="api-key-input" placeholder="sk-..."
+                                   class="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-indigo-500">
+                            <button type="button" id="save-api-key"
+                                    class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-medium whitespace-nowrap">
+                                <i class="fas fa-save mr-1"></i> Save Key
+                            </button>
+                        </div>
+                        <p class="text-sm text-gray-500 mt-1">Saves to .env file and activates immediately. No restart required.</p>
+                    </div>
+
+                    <!-- Legacy Database Key Warning -->
+                    <div id="db-key-warning" class="hidden mt-3 bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                        <div class="flex items-start">
+                            <i class="fas fa-exclamation-triangle text-yellow-600 mr-2 mt-1"></i>
+                            <div class="flex-1">
+                                <p class="text-sm text-yellow-800">
+                                    <strong>Deprecated:</strong> Your API key is stored in the database. This method is deprecated.
+                                    Click "Save Key" above to migrate to the .env file.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Server URL Configuration (shown for Ollama and OpenAI-Compatible providers) -->
+                <div id="ollama-url-container" class="hidden space-y-4">
+                    <div>
+                        <label id="server-url-label" class="block text-sm font-medium text-gray-700 mb-2">Server URL</label>
+                        <div class="flex gap-2">
+                            <input type="text" id="ollama-url" placeholder="http://localhost:11434"
+                                   class="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-indigo-500">
+                            <button type="button" id="fetch-ollama-models"
+                                    class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition font-medium whitespace-nowrap">
+                                <i class="fas fa-download mr-1"></i> Fetch Models
+                            </button>
+                        </div>
+                        <p id="server-url-help" class="text-sm text-gray-500 mt-1">Enter your server URL and click to fetch available models</p>
+                    </div>
+
+                    <!-- Optional API Key (for Ollama and OpenAI-Compatible providers) -->
+                    <div id="server-api-key-container">
+                        <label id="server-api-key-label" class="block text-sm font-medium text-gray-700 mb-2">API Key (Optional)</label>
+                        <div class="flex gap-2">
+                            <input type="password" id="server-api-key-input" placeholder="Optional: Leave blank if not required"
+                                   class="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-indigo-500">
+                            <button type="button" id="save-server-api-key"
+                                    class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-medium whitespace-nowrap">
+                                <i class="fas fa-save mr-1"></i> Save Key
+                            </button>
+                        </div>
+                        <p id="server-api-key-help" class="text-sm text-gray-500 mt-1">Optional: Leave blank if your server does not require authentication</p>
+                    </div>
+
+                    <!-- Connection Status -->
+                    <div id="ollama-connection-status" class="hidden">
+                        <div id="ollama-connection-success" class="hidden flex items-center p-3 bg-green-50 border border-green-200 rounded-lg">
+                            <i class="fas fa-check-circle text-green-600 mr-2"></i>
+                            <div>
+                                <span class="text-sm font-medium text-green-800">Connected</span>
+                                <span id="ollama-model-count" class="ml-2 text-sm text-gray-600"></span>
+                            </div>
+                        </div>
+                        <div id="ollama-connection-error" class="hidden flex items-center p-3 bg-red-50 border border-red-200 rounded-lg">
+                            <i class="fas fa-exclamation-circle text-red-600 mr-2"></i>
+                            <span id="ollama-connection-error-message" class="text-sm font-medium text-red-800"></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Available Models List (shown after fetching) -->
+                <div id="available-models-container" class="hidden">
+                    <div class="flex items-center justify-between mb-2">
+                        <label class="block text-sm font-medium text-gray-700">Available Models on Server</label>
+                        <span id="model-count-badge" class="text-xs px-2 py-1 bg-indigo-100 text-indigo-800 rounded-full"></span>
+                    </div>
+                    <div id="available-models-list" class="grid grid-cols-1 md:grid-cols-2 gap-2 p-4 bg-gray-50 border border-gray-200 rounded-lg max-h-48 overflow-y-auto">
+                        <!-- Model items will be inserted here -->
+                    </div>
+                    <p class="text-sm text-gray-500 mt-1">These are the models currently loaded on your server. Select one from the dropdown below.</p>
                 </div>
 
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-2">Model</label>
-                    <select id="llm-model" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-indigo-500">
-                        <option value="">Select Model</option>
+                    <select id="llm-model" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-indigo-500" disabled>
+                        <option value="">Select Provider First</option>
                     </select>
+                    <p id="model-help-text" class="text-sm text-gray-500 mt-1">Select a provider to see available models</p>
                 </div>
 
-                <div id="api-key-container">
-                    <label class="block text-sm font-medium text-gray-700 mb-2">API Key</label>
-
-                    <!-- Current API Key Status -->
-                    <div id="api-key-status" class="mb-3 hidden">
-                        <div class="flex items-center p-3 bg-green-50 border border-green-200 rounded-lg">
-                            <i class="fas fa-check-circle text-green-600 mr-2"></i>
-                            <div>
-                                <span class="text-sm font-medium text-green-800">API Key is set</span>
-                                <span id="api-key-masked" class="ml-2 font-mono text-sm text-gray-600"></span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div id="api-key-not-set" class="mb-3 hidden">
-                        <div class="flex items-center p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-                            <i class="fas fa-exclamation-triangle text-yellow-600 mr-2"></i>
-                            <span class="text-sm font-medium text-yellow-800">No API key configured</span>
-                        </div>
-                    </div>
-
-                    <input type="password" id="api-key" placeholder="Enter new API key"
-                           class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-indigo-500">
-                    <p class="text-sm text-gray-500 mt-1">Leave blank to keep existing key. Enter a new key to replace it.</p>
-                </div>
-
+                <!-- Save Settings Button -->
                 <div class="flex justify-end">
                     <button type="submit" id="save-llm-settings"
                             class="bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700 transition font-medium">
@@ -433,25 +501,89 @@
 {% block extra_js %}
 <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
 <script>
+    console.log('[ADMIN PAGE] Script loaded!');
+
+    // Base URL for navigation (matches APPLICATION_ROOT)
+    const BASE_URL = '{{ url_for("main.index") }}'.replace(/\/$/, '') || '';
+
     let currentTab = 'dashboard';
     let currentPage = 1;
+    // Use a different variable name to avoid collision with main.js
+    let adminUserData = null;
 
-    // Initialize
-    document.addEventListener('DOMContentLoaded', () => {
+    // Initialize immediately (script is at end of body, so DOM is ready)
+    (async function initializeAdmin() {
         // Check if user is admin
         const token = localStorage.getItem('auth_token');
         if (!token) {
-            window.location.href = '/';
+            window.location.href = window.location.pathname.replace(/\/admin\/?$/, '') || '/';
             return;
         }
 
         // Set up axios authorization header
         axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
 
+        // Use the global API_BASE_URL set by the server (includes APPLICATION_ROOT)
+        if (window.API_BASE_URL) {
+            axios.defaults.baseURL = window.API_BASE_URL;
+        }
+
+        // Get current user info and update navigation
+        try {
+            const response = await axios.get('/auth/me');
+            adminUserData = response.data.user;
+            updateAuthUI(adminUserData);
+        } catch (error) {
+            console.error('Error fetching user info:', error);
+            window.location.href = '/';
+            return;
+        }
+
+        // Check if user is admin
+        if (!adminUserData.is_admin) {
+            window.location.href = '/';
+            return;
+        }
+
         // Load dashboard data
         loadDashboard();
         loadSystemStatus();
-    });
+    })();
+
+    // Update authentication UI (from main.js)
+    function updateAuthUI(user) {
+        const authSection = document.getElementById('auth-section');
+        if (!authSection) return;
+
+        if (user) {
+            authSection.innerHTML = `
+                <div class="relative">
+                    <span class="text-sm text-gray-700">Welcome, <span class="font-semibold">${user.name}</span></span>
+                    ${!user.is_approved ? '<span class="ml-2 px-2 py-1 text-xs bg-yellow-100 text-yellow-800 rounded-full">Pending Approval</span>' : ''}
+                    <button onclick="toggleUserMenu()" class="ml-2 text-gray-700 hover:text-indigo-600">
+                        <i class="fas fa-user-circle text-xl"></i>
+                    </button>
+                </div>
+            `;
+        } else {
+            authSection.innerHTML = `
+                <a href="/" class="text-gray-700 hover:text-indigo-600 px-3 py-2 rounded-md text-sm font-medium">Home</a>
+                <button onclick="showLoginModal()" class="text-gray-700 hover:text-indigo-600 px-3 py-2 rounded-md text-sm font-medium">
+                    Login
+                </button>
+                <button onclick="showRegisterModal()" class="bg-indigo-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-indigo-700">
+                    Register
+                </button>
+            `;
+        }
+    }
+
+    function toggleUserMenu() {
+        const userMenu = document.getElementById('user-menu');
+        if (userMenu) {
+            userMenu.classList.toggle('hidden');
+        }
+    }
 
     // Tab switching
     function switchTab(tabName) {
@@ -502,7 +634,7 @@
             const token = localStorage.getItem('auth_token');
             console.log('[Admin] Loading dashboard with token:', token ? token.substring(0, 20) + '...' : 'none');
 
-            const statsResponse = await axios.get('/api/admin/stats', {
+            const statsResponse = await axios.get('admin/stats', {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
 
@@ -581,7 +713,7 @@
             const search = document.getElementById('user-search').value;
             const status = document.getElementById('user-filter').value;
 
-            let url = `/api/admin/users?page=${page}`;
+            let url = `admin/users?page=${page}`;
             if (search) url += `&search=${search}`;
             if (status) url += `&status=${status}`;
 
@@ -655,7 +787,7 @@
     async function loadPendingUsers() {
         try {
             const token = localStorage.getItem('auth_token');
-            const response = await axios.get('/api/admin/pending', {
+            const response = await axios.get('admin/pending', {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
 
@@ -699,7 +831,7 @@
     async function loadLLMSettings() {
         try {
             const token = localStorage.getItem('auth_token');
-            const response = await axios.get('/api/admin/llm-settings', {
+            const response = await axios.get('admin/llm-settings', {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
 
@@ -707,6 +839,7 @@
             const settings = llmSettingsData;
             const providerSelect = document.getElementById('llm-provider');
             const modelSelect = document.getElementById('llm-model');
+            const modelHelpText = document.getElementById('model-help-text');
 
             // Populate providers
             providerSelect.innerHTML = '<option value="">Select Provider</option>';
@@ -719,27 +852,115 @@
             });
 
             // Handle provider change
-            providerSelect.addEventListener('change', () => {
+            providerSelect.addEventListener('change', async () => {
                 const selectedProvider = providerSelect.value;
-                if (selectedProvider && settings.available_providers[selectedProvider]) {
+                const apiKeyContainer = document.getElementById('api-key-container');
+                const ollamaUrlContainer = document.getElementById('ollama-url-container');
+                const ollamaUrlInput = document.getElementById('ollama-url');
+                const fetchModelsBtn = document.getElementById('fetch-ollama-models');
+
+                // Hide the available models list when switching providers
+                document.getElementById('available-models-container').classList.add('hidden');
+
+                if (!selectedProvider) {
+                    // No provider selected
+                    modelSelect.innerHTML = '<option value="">Select Provider First</option>';
+                    modelSelect.disabled = true;
+                    modelHelpText.textContent = 'Select a provider to see available models';
+                    apiKeyContainer.style.display = 'none';
+                    ollamaUrlContainer.classList.add('hidden');
+                    return;
+                }
+
+                const providerInfo = settings.available_providers[selectedProvider];
+
+                if (providerInfo.requires_api_key) {
+                    // OpenAI or other API-based provider (API key required)
+                    apiKeyContainer.style.display = 'block';
+                    ollamaUrlContainer.classList.add('hidden');
+
+                    // Update API key label to indicate required
+                    const apiKeyLabel = document.getElementById('api-key-config-label');
+                    if (apiKeyLabel) {
+                        apiKeyLabel.innerHTML = 'API Key Configuration <span class="text-red-500">*</span>';
+                    }
+
+                    // Show the input container for OpenAI
+                    const apiKeyInputContainer = document.getElementById('api-key-input-container');
+                    if (apiKeyInputContainer) {
+                        apiKeyInputContainer.style.display = 'block';
+                    }
+
+                    // Enable model dropdown and populate models
+                    modelSelect.disabled = false;
                     modelSelect.innerHTML = '<option value="">Select Model</option>';
-                    settings.available_providers[selectedProvider].models.forEach(model => {
+                    providerInfo.models.forEach(model => {
                         const option = document.createElement('option');
                         option.value = model;
                         option.textContent = model;
                         if (model === settings.current_model) option.selected = true;
                         modelSelect.appendChild(option);
                     });
+                    modelHelpText.textContent = `Select ${providerInfo.name} model`;
 
-                    // Show/hide API key section based on provider requirements
-                    const providerInfo = settings.available_providers[selectedProvider];
-                    const apiKeyContainer = document.getElementById('api-key-container');
+                    updateApiKeyStatus(selectedProvider, settings.api_keys);
+                } else {
+                    // Ollama or OpenAI-Compatible provider (API key optional, URL required)
+                    // Show the API key status section but hide the input field (use server-specific input instead)
+                    apiKeyContainer.style.display = 'block';
 
-                    if (providerInfo.requires_api_key) {
-                        apiKeyContainer.style.display = 'block';
-                        updateApiKeyStatus(selectedProvider, settings.api_keys);
-                    } else {
-                        apiKeyContainer.style.display = 'none';
+                    // Update the label to indicate optional
+                    const apiKeyLabel = document.getElementById('api-key-config-label');
+                    if (apiKeyLabel) {
+                        apiKeyLabel.innerHTML = 'API Key Configuration <span class="text-gray-500">(Optional)</span>';
+                    }
+
+                    // Hide the input container, keep only the status section
+                    const apiKeyInputContainer = document.getElementById('api-key-input-container');
+                    if (apiKeyInputContainer) {
+                        apiKeyInputContainer.style.display = 'none';
+                    }
+
+                    ollamaUrlContainer.classList.remove('hidden');  // Show server config with its own API key field
+
+                    // Update API key status for this provider
+                    updateApiKeyStatus(selectedProvider, settings.api_keys);
+
+                    // Update server URL label and help text based on provider
+                    const serverUrlLabel = document.getElementById('server-url-label');
+                    const serverUrlHelp = document.getElementById('server-url-help');
+                    const ollamaUrlInput = document.getElementById('ollama-url');
+
+                    if (selectedProvider === 'ollama') {
+                        if (serverUrlLabel) serverUrlLabel.textContent = 'Ollama Server URL';
+                        if (serverUrlHelp) serverUrlHelp.textContent = 'Enter your Ollama API URL and click to fetch available models';
+                        if (ollamaUrlInput) ollamaUrlInput.placeholder = 'http://localhost:11434';
+                    } else if (selectedProvider === 'openai-compatible') {
+                        if (serverUrlLabel) serverUrlLabel.textContent = 'Server URL';
+                        if (serverUrlHelp) serverUrlHelp.textContent = 'Enter your OpenAI-compatible server URL and click to fetch available models';
+                        if (ollamaUrlInput) ollamaUrlInput.placeholder = 'http://localhost:8000';
+                    }
+
+                    // Set server URL if available
+                    if (settings.ollama_url) {
+                        ollamaUrlInput.value = settings.ollama_url;
+                    }
+
+                    // Disable model dropdown until models are fetched
+                    modelSelect.disabled = true;
+                    modelSelect.innerHTML = '<option value="">Click "Fetch Models" First</option>';
+
+                    // Update help text based on provider type
+                    if (selectedProvider === 'ollama') {
+                        modelHelpText.textContent = 'Enter your Ollama URL and click "Fetch Models" to see available models';
+                    } else if (selectedProvider === 'openai-compatible') {
+                        modelHelpText.textContent = 'Enter your server URL and click "Fetch Models" to see available models';
+                    }
+
+                    // Auto-fetch models if URL is set
+                    if (settings.ollama_url && (settings.current_provider === 'ollama' || settings.current_provider === 'openai-compatible')) {
+                        // Auto-fetch on load for Ollama and OpenAI-Compatible
+                        await fetchOllamaModels();
                     }
                 }
             });
@@ -755,21 +976,205 @@
         }
     }
 
+    // Fetch Ollama models
+    async function fetchOllamaModels() {
+        const urlInput = document.getElementById('ollama-url');
+        const ollamaUrl = urlInput.value.trim() || 'http://localhost:11434';
+        const apiKeyInput = document.getElementById('server-api-key-input');
+        const apiKey = apiKeyInput ? apiKeyInput.value.trim() : '';
+        const provider = document.getElementById('llm-provider').value || 'openai';
+        const fetchBtn = document.getElementById('fetch-ollama-models');
+        const statusContainer = document.getElementById('ollama-connection-status');
+        const successDiv = document.getElementById('ollama-connection-success');
+        const errorDiv = document.getElementById('ollama-connection-error');
+        const modelSelect = document.getElementById('llm-model');
+        const modelHelpText = document.getElementById('model-help-text');
+
+        // Reset status
+        statusContainer.classList.remove('hidden');
+        successDiv.classList.add('hidden');
+        errorDiv.classList.add('hidden');
+
+        // Disable button and show loading
+        fetchBtn.disabled = true;
+        fetchBtn.innerHTML = '<i class="fas fa-spinner animate-spin mr-1"></i> Fetching...';
+
+        try {
+            const token = localStorage.getItem('auth_token');
+            const response = await axios.post('admin/test-ollama-connection',
+                {
+                    ollama_url: ollamaUrl,
+                    api_key: apiKey,
+                    provider: provider
+                },
+                { headers: { 'Authorization': `Bearer ${token}` } }
+            );
+
+            if (response.data.success) {
+                successDiv.classList.remove('hidden');
+
+                // Get loaded models list (for Ollama servers)
+                const loadedModels = response.data.loaded_models || [];
+                const loadedCount = response.data.loaded_count || 0;
+                const allModels = response.data.models || [];
+
+                document.getElementById('ollama-model-count').textContent =
+                    `(${loadedCount} loaded, ${allModels.length} total available)`;
+                showToast(`Found ${loadedCount} loaded models (${allModels.length} total on server)`, 'success');
+
+                // Show and populate the available models list
+                const modelsContainer = document.getElementById('available-models-container');
+                const modelsList = document.getElementById('available-models-list');
+                const modelCountBadge = document.getElementById('model-count-badge');
+
+                modelsContainer.classList.remove('hidden');
+                modelCountBadge.textContent = `${loadedCount} loaded / ${allModels.length} total`;
+
+                // Clear and populate the model list (show all models)
+                modelsList.innerHTML = '';
+                allModels.forEach((model, index) => {
+                    const isLoaded = loadedModels.includes(model);
+                    const modelItem = document.createElement('div');
+                    modelItem.className = 'flex items-center p-2 bg-white border border-gray-200 rounded-lg hover:bg-indigo-50 transition';
+                    modelItem.innerHTML = `
+                        <div class="flex items-center flex-1">
+                            <i class="fas fa-cube ${isLoaded ? 'text-green-600' : 'text-gray-400'} mr-2"></i>
+                            <span class="text-sm font-medium ${isLoaded ? 'text-gray-900' : 'text-gray-600'}">${model}</span>
+                        </div>
+                        <span class="text-xs px-2 py-1 ${isLoaded ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'} rounded-full">
+                            ${isLoaded ? 'Loaded' : 'Not loaded'}
+                        </span>
+                    `;
+                    modelsList.appendChild(modelItem);
+                });
+
+                // Enable and populate model dropdown with ONLY loaded models
+                modelSelect.disabled = loadedCount === 0;  // Disable if no models loaded
+                const currentModel = modelSelect.value;
+
+                if (loadedCount === 0) {
+                    // No models loaded - show message in dropdown
+                    modelSelect.innerHTML = '<option value="">No models loaded - load one first</option>';
+                    modelHelpText.textContent = 'Load a model on your server first, then click "Fetch Models" again';
+                } else {
+                    // Show only loaded models in dropdown
+                    modelSelect.innerHTML = '<option value="">Select Model</option>';
+                    loadedModels.forEach(model => {
+                        const option = document.createElement('option');
+                        option.value = model;
+                        option.textContent = model;
+                        if (model === currentModel || model === llmSettingsData?.current_model) option.selected = true;
+                        modelSelect.appendChild(option);
+                    });
+                }
+
+                // Update help text based on current provider
+                const currentProvider = document.getElementById('llm-provider').value;
+                if (currentProvider === 'openai-compatible') {
+                    modelHelpText.textContent = `Select your server model (${response.data.model_count} available)`;
+                } else {
+                    modelHelpText.textContent = `Select your Ollama model (${response.data.model_count} available)`;
+                }
+            }
+
+        } catch (error) {
+            errorDiv.classList.remove('hidden');
+            document.getElementById('ollama-connection-error-message').textContent =
+                error.response?.data?.error || 'Failed to fetch models';
+            showToast('Failed to fetch models', 'error');
+
+            // Hide the models list on error
+            document.getElementById('available-models-container').classList.add('hidden');
+
+            // Keep model dropdown disabled
+            modelSelect.disabled = true;
+            modelSelect.innerHTML = '<option value="">Click "Fetch Models" First</option>';
+            modelHelpText.textContent = 'Fix connection issues and try fetching models again';
+        } finally {
+            fetchBtn.disabled = false;
+            fetchBtn.innerHTML = '<i class="fas fa-download mr-1"></i> Fetch Models';
+        }
+    }
+
     // Update API key status display
     function updateApiKeyStatus(provider, apiKeys) {
         const apiKeyStatus = document.getElementById('api-key-status');
-        const apiKeyNotSet = document.getElementById('api-key-not-set');
-        const apiKeyMasked = document.getElementById('api-key-masked');
+        const dbKeyWarning = document.getElementById('db-key-warning');
 
-        if (apiKeys && apiKeys[provider] && apiKeys[provider].is_set) {
-            // API key is set - show masked version
-            apiKeyStatus.classList.remove('hidden');
-            apiKeyNotSet.classList.add('hidden');
-            apiKeyMasked.textContent = apiKeys[provider].masked || '********';
-        } else {
+        // Check if API key is optional for this provider
+        const isOptionalKey = ['ollama', 'openai-compatible'].includes(provider);
+
+        if (!apiKeys || !apiKeys[provider] || !apiKeys[provider].is_set) {
             // API key is not set
-            apiKeyStatus.classList.add('hidden');
-            apiKeyNotSet.classList.remove('hidden');
+            if (isOptionalKey) {
+                // Show info message (not a warning) for optional API keys
+                apiKeyStatus.innerHTML = `
+                    <div class="flex items-center p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                        <i class="fas fa-info-circle text-blue-600 mr-2"></i>
+                        <span class="text-sm font-medium text-blue-800">API Key is optional</span>
+                    </div>
+                `;
+            } else {
+                // Show warning for required API keys
+                apiKeyStatus.innerHTML = `
+                    <div class="flex items-center p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                        <i class="fas fa-exclamation-triangle text-yellow-600 mr-2"></i>
+                        <span class="text-sm font-medium text-yellow-800">No API key configured</span>
+                    </div>
+                `;
+            }
+            dbKeyWarning.classList.add('hidden');
+            return;
+        }
+
+        const keyInfo = apiKeys[provider];
+        const source = keyInfo.source || 'unknown';
+
+        // Build status message based on source
+        if (source === 'environment') {
+            apiKeyStatus.innerHTML = `
+                <div class="flex items-center p-3 bg-green-50 border border-green-200 rounded-lg">
+                    <i class="fas fa-check-circle text-green-600 mr-2"></i>
+                    <div>
+                        <span class="text-sm font-medium text-green-800">API Key loaded from environment variable</span>
+                        <span class="ml-2 font-mono text-sm text-gray-600">${keyInfo.masked || '********'}</span>
+                    </div>
+                </div>
+            `;
+            dbKeyWarning.classList.add('hidden');
+        } else if (source === 'database_deprecated') {
+            apiKeyStatus.innerHTML = `
+                <div class="flex items-center p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                    <i class="fas fa-exclamation-triangle text-yellow-600 mr-2"></i>
+                    <div>
+                        <span class="text-sm font-medium text-yellow-800">API Key loaded from database (deprecated)</span>
+                        <span class="ml-2 font-mono text-sm text-gray-600">${keyInfo.masked || '********'}</span>
+                    </div>
+                </div>
+            `;
+            dbKeyWarning.classList.remove('hidden');
+        } else if (source === 'file') {
+            apiKeyStatus.innerHTML = `
+                <div class="flex items-center p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                    <i class="fas fa-file-alt text-yellow-600 mr-2"></i>
+                    <div>
+                        <span class="text-sm font-medium text-yellow-800">API Key loaded from APISetting.txt (legacy)</span>
+                        <span class="ml-2 font-mono text-sm text-gray-600">${keyInfo.masked || '********'}</span>
+                    </div>
+                </div>
+            `;
+            dbKeyWarning.classList.add('hidden');
+        } else {
+            apiKeyStatus.innerHTML = `
+                <div class="flex items-center p-3 bg-green-50 border border-green-200 rounded-lg">
+                    <i class="fas fa-check-circle text-green-600 mr-2"></i>
+                    <div>
+                        <span class="text-sm font-medium text-green-800">API Key is configured</span>
+                        <span class="ml-2 font-mono text-sm text-gray-600">${keyInfo.masked || '********'}</span>
+                    </div>
+                </div>
+            `;
+            dbKeyWarning.classList.add('hidden');
         }
     }
 
@@ -777,7 +1182,7 @@
     async function loadSystemStatus() {
         try {
             const token = localStorage.getItem('auth_token');
-            const response = await axios.get('/api/admin/system-status', {
+            const response = await axios.get('admin/system-status', {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
 
@@ -793,12 +1198,31 @@
             `;
 
             // Update LLM service status
+            const providerDisplayNames = {
+                'openai': 'OpenAI',
+                'ollama': 'Ollama',
+                'openai-compatible': 'OpenAI-Compatible',
+                'unknown': 'Unknown'
+            };
+
             document.getElementById('llm-service-status').innerHTML = `
-                <div class="flex items-center">
-                    <span class="w-3 h-3 rounded-full mr-2 ${status.llm_service.status === 'healthy' ? 'bg-green-500' : 'bg-red-500'}"></span>
-                    <span class="font-medium">${status.llm_service.status === 'healthy' ? 'Healthy' : 'Error'}</span>
+                <div class="space-y-2">
+                    <div class="flex items-center">
+                        <span class="w-3 h-3 rounded-full mr-2 ${status.llm_service.status === 'healthy' ? 'bg-green-500' : 'bg-red-500'}"></span>
+                        <span class="font-medium">${status.llm_service.status === 'healthy' ? 'Healthy' : 'Error'}</span>
+                    </div>
+                    ${status.llm_service.error ? `<p class="text-sm text-red-600 mt-1">${status.llm_service.error}</p>` : ''}
+                    <div class="mt-2 pl-5 space-y-1">
+                        <div class="flex justify-between text-sm">
+                            <span class="text-gray-600">Provider:</span>
+                            <span class="font-medium text-gray-900">${providerDisplayNames[status.llm_service.provider] || status.llm_service.provider}</span>
+                        </div>
+                        <div class="flex justify-between text-sm">
+                            <span class="text-gray-600">Model:</span>
+                            <span class="font-medium text-gray-900">${status.llm_service.model || 'Not configured'}</span>
+                        </div>
+                    </div>
                 </div>
-                ${status.llm_service.error ? `<p class="text-sm text-red-600 mt-1">${status.llm_service.error}</p>` : ''}
             `;
 
             // Update storage status
@@ -866,7 +1290,7 @@
 
         try {
             const token = localStorage.getItem('auth_token');
-            await axios.post(`/api/admin/approve/${userId}`, {}, {
+            await axios.post(`admin/approve/${userId}`, {}, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
 
@@ -887,7 +1311,7 @@
 
         try {
             const token = localStorage.getItem('auth_token');
-            await axios.delete(`/api/admin/reject/${userId}`, {
+            await axios.delete(`admin/reject/${userId}`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
 
@@ -907,7 +1331,7 @@
 
         try {
             const token = localStorage.getItem('auth_token');
-            await axios.post(`/api/admin/deactivate/${userId}`, {}, {
+            await axios.post(`admin/deactivate/${userId}`, {}, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
 
@@ -927,7 +1351,7 @@
 
         try {
             const token = localStorage.getItem('auth_token');
-            await axios.post(`/api/admin/activate/${userId}`, {}, {
+            await axios.post(`admin/activate/${userId}`, {}, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
 
@@ -947,7 +1371,7 @@
 
         try {
             const token = localStorage.getItem('auth_token');
-            await axios.delete(`/api/admin/users/${userId}`, {
+            await axios.delete(`admin/users/${userId}`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
 
@@ -975,10 +1399,10 @@
             const data = {
                 provider: document.getElementById('llm-provider').value,
                 model: document.getElementById('llm-model').value,
-                api_key: document.getElementById('api-key').value
+                ollama_url: document.getElementById('ollama-url').value
             };
 
-            const response = await axios.post('/api/admin/llm-settings', data, {
+            const response = await axios.post('admin/llm-settings', data, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
 
@@ -987,11 +1411,118 @@
         } catch (error) {
             const errorMsg = error.response?.data?.error || 'Failed to save LLM settings';
             showToast(errorMsg, 'error');
+
+            // If there are instructions in the response, show them
+            if (error.response?.data?.instructions) {
+                const instructions = error.response.data.instructions;
+                console.log('Instructions:', instructions);
+            }
         } finally {
             saveBtn.disabled = false;
             saveBtn.innerHTML = originalText;
         }
     });
+
+    // Save API key to .env file
+    document.getElementById('save-api-key').addEventListener('click', async () => {
+        const apiKeyInput = document.getElementById('api-key-input');
+        const apiKey = apiKeyInput.value.trim();
+        const provider = document.getElementById('llm-provider').value || 'openai';
+        const saveBtn = document.getElementById('save-api-key');
+        const originalText = saveBtn.innerHTML;
+
+        if (!apiKey) {
+            showToast('Please enter an API key', 'error');
+            return;
+        }
+
+        saveBtn.disabled = true;
+        saveBtn.innerHTML = '<i class="fas fa-spinner animate-spin mr-1"></i> Saving...';
+
+        try {
+            const token = localStorage.getItem('auth_token');
+            const response = await axios.post('admin/save-api-key',
+                { provider: provider, api_key: apiKey },
+                { headers: { 'Authorization': `Bearer ${token}` } }
+            );
+
+            showToast(response.data.message, 'success');
+
+            // Clear input
+            apiKeyInput.value = '';
+
+            // Show activation instructions from backend (confirms no restart required)
+            if (response.data.instructions) {
+                const instructions = response.data.instructions.join('\n');
+                showToast(instructions, 'info', 5000);
+            }
+
+            // Reload settings to reflect the change, but preserve the selected provider
+            const providerSelect = document.getElementById('llm-provider');
+            const currentProvider = providerSelect.value;
+            setTimeout(async () => {
+                await loadLLMSettings();
+                // Restore the selected provider after reload
+                if (currentProvider) {
+                    providerSelect.value = currentProvider;
+                    // Manually trigger the change event to update UI
+                    providerSelect.dispatchEvent(new Event('change'));
+                }
+            }, 1000);
+
+        } catch (error) {
+            const errorMsg = error.response?.data?.error || 'Failed to save API key';
+            showToast(errorMsg, 'error');
+        } finally {
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = originalText;
+        }
+    });
+
+    // Save server API key to .env file (for Ollama and OpenAI-Compatible providers)
+    document.getElementById('save-server-api-key').addEventListener('click', async () => {
+        const apiKeyInput = document.getElementById('server-api-key-input');
+        const apiKey = apiKeyInput.value.trim();
+        const provider = document.getElementById('llm-provider').value || 'openai';
+        const saveBtn = document.getElementById('save-server-api-key');
+        const originalText = saveBtn.innerHTML;
+
+        // Allow empty API key (it's optional for these providers)
+        saveBtn.disabled = true;
+        saveBtn.innerHTML = '<i class="fas fa-spinner animate-spin mr-1"></i> Saving...';
+
+        try {
+            const token = localStorage.getItem('auth_token');
+            const response = await axios.post('admin/save-api-key',
+                { provider: provider, api_key: apiKey },
+                { headers: { 'Authorization': `Bearer ${token}` } }
+            );
+
+            showToast(response.data.message, 'success');
+
+            // Clear input after successful save
+            apiKeyInput.value = '';
+
+            // Show activation instructions from backend (confirms no restart required)
+            if (response.data.instructions) {
+                const instructions = response.data.instructions.join('\n');
+                showToast(instructions, 'info', 5000);
+            }
+
+            // Reload settings to reflect the change and update the API key status display
+            await loadLLMSettings();
+
+        } catch (error) {
+            const errorMsg = error.response?.data?.error || 'Failed to save API key';
+            showToast(errorMsg, 'error');
+        } finally {
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = originalText;
+        }
+    });
+
+    // Test Ollama connection (now Fetch Models button)
+    document.getElementById('fetch-ollama-models').addEventListener('click', fetchOllamaModels);
 
     // Event listeners
     document.getElementById('user-search').addEventListener('input', () => {
@@ -1041,7 +1572,7 @@
                 return;
             }
 
-            const response = await axios.get('/api/usage-stats', {
+            const response = await axios.get('usage-stats', {
                 headers: {
                     'Authorization': `Bearer ${token}`
                 }
@@ -1117,7 +1648,7 @@
                 return;
             }
 
-            const response = await axios.post('/api/auth/change-password', {
+            const response = await axios.post('auth/change-password', {
                 current_password: currentPassword,
                 new_password: newPassword
             }, {
@@ -1171,7 +1702,7 @@
             const token = localStorage.getItem('auth_token');
             const maxFiles = document.getElementById('max-files-input').value;
 
-            const response = await axios.put(`/api/admin/users/${editingUserId}/limits`, {
+            const response = await axios.put(`admin/users/${editingUserId}/limits`, {
                 max_files_per_session: parseInt(maxFiles)
             }, {
                 headers: {
@@ -1191,23 +1722,6 @@
         } finally {
             saveBtn.disabled = false;
             saveBtn.innerHTML = originalText;
-        }
-    }
-
-    function logout() {
-        const token = localStorage.getItem('auth_token');
-        if (token) {
-            axios.post('/api/auth/logout', {}, {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
-            }).finally(() => {
-                    localStorage.removeItem('auth_token');
-                    localStorage.removeItem('user_settings');
-                    window.location.href = '/';
-                });
-        } else {
-            window.location.href = '/';
         }
     }
 </script>
