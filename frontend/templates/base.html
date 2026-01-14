@@ -58,9 +58,43 @@
     <!-- Footer -->
     <footer class="bg-gray-100 mt-16">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-            <p class="text-center text-gray-500 text-sm">
-                Powered by AI - Your PDFs are processed securely and deleted immediately
-            </p>
+            <!-- Developer Information -->
+            <div class="text-center space-y-3">
+                <!-- Developer Info & Links -->
+                <div>
+                    <p class="text-gray-700 text-sm">
+                        Developed by Dr. Junguk Hur, Associate Professor, University of North Dakota School of Medicine and Health Sciences
+                    </p>
+                    <!-- Links -->
+                    <div class="flex justify-center items-center space-x-6 mt-3">
+                        <!-- Hur Lab -->
+                        <a href="https://med.und.edu/research/labs/hur/index.html" target="_blank" rel="noopener noreferrer"
+                           class="text-gray-600 hover:text-indigo-600 transition" title="Hur Lab">
+                            <i class="fas fa-flask"></i>
+                        </a>
+
+                        <!-- Email -->
+                        <a href="mailto:junguk.hur@med.UND.edu" class="text-gray-600 hover:text-indigo-600 transition" title="Email">
+                            <i class="fas fa-envelope"></i>
+                        </a>
+
+                        <!-- GitHub -->
+                        <a href="https://github.com/windysky/ResearchPDFFileRenamerGLM" target="_blank" rel="noopener noreferrer"
+                           class="text-gray-600 hover:text-indigo-600 transition" title="GitHub">
+                            <i class="fab fa-github"></i>
+                        </a>
+                    </div>
+                </div>
+
+                <!-- Privacy Notice & Version -->
+                <div class="pt-3 border-t border-gray-200">
+                    <p class="text-gray-500 text-xs">
+                        <i class="fas fa-shield-alt mr-1"></i>
+                        Your PDFs are processed securely with AI and deleted immediately. No files are stored.
+                        <span class="ml-2">Version {{ get_version() }}</span>
+                    </p>
+                </div>
+            </div>
         </div>
     </footer>
 

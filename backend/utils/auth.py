@@ -9,38 +9,50 @@ def auth_required(f):
     """Decorator to require authentication for API endpoints."""
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        print(f"[DEBUG] auth_required check for endpoint {request.endpoint}")
-        print(f"[DEBUG] Flask-Login current_user: {current_user}, authenticated: {current_user.is_authenticated if current_user else 'None'}")
+        # Only log debug information in debug mode to prevent exposing sensitive data
+        if current_app.debug:
+            print(f"[DEBUG] auth_required check for endpoint {request.endpoint}")
+            print(f"[DEBUG] Flask-Login current_user: {current_user}, authenticated: {current_user.is_authenticated if current_user else 'None'}")
 
         # Check Flask-Login session first
         if current_user.is_authenticated:
-            print(f"[DEBUG] auth_required: Flask-Login session valid for user {current_user.id}")
+            if current_app.debug:
+                print(f"[DEBUG] auth_required: Flask-Login session valid for user {current_user.id}")
             return f(*args, **kwargs)
 
         # Check for JWT token in Authorization header
         auth_header = request.headers.get('Authorization')
-        print(f"[DEBUG] auth_required: Authorization header: {auth_header[:20] + '...' if auth_header and len(auth_header) > 20 else auth_header}")
+        if current_app.debug:
+            print(f"[DEBUG] auth_required: Authorization header: {auth_header[:20] + '...' if auth_header and len(auth_header) > 20 else auth_header}")
+
         if auth_header and auth_header.startswith('Bearer '):
             token = auth_header[7:]
             try:
                 # Decode JWT token
                 payload = jwt.decode(token, current_app.config['SECRET_KEY'], algorithms=['HS256'])
                 user_id = payload.get('user_id')
-                print(f"[DEBUG] auth_required: JWT decoded, user_id: {user_id}")
+                if current_app.debug:
+                    print(f"[DEBUG] auth_required: JWT decoded, user_id: {user_id}")
+
                 if user_id:
                     from flask_login import login_user
                     user = User.query.get(user_id)
-                    print(f"[DEBUG] auth_required: User found: {user}, approved: {user.is_approved if user else 'None'}")
+                    if current_app.debug:
+                        print(f"[DEBUG] auth_required: User found: {user}, approved: {user.is_approved if user else 'None'}")
+
                     if user and user.is_approved:
                         # Set the user in Flask-Login for this request
-                        print(f"[DEBUG] auth_required: Logging in user {user_id} via JWT")
+                        if current_app.debug:
+                            print(f"[DEBUG] auth_required: Logging in user {user_id} via JWT")
                         login_user(user)
                         return f(*args, **kwargs)
             except Exception as e:
-                print(f"[DEBUG] JWT decode error: {e}")
+                if current_app.debug:
+                    print(f"[DEBUG] JWT decode error: {e}")
                 pass
 
-        print(f"[DEBUG] auth_required: Authentication failed for {request.endpoint}")
+        if current_app.debug:
+            print(f"[DEBUG] auth_required: Authentication failed for {request.endpoint}")
         return jsonify({'error': 'Authentication required'}), 401
 
     return decorated_function
@@ -50,7 +62,8 @@ def admin_required(f):
     @wraps(f)
     @auth_required
     def decorated_function(*args, **kwargs):
-        print(f"[DEBUG] admin_required check for user {current_user.id}, is_admin: {current_user.is_admin if current_user else 'None'}")
+        if current_app.debug:
+            print(f"[DEBUG] admin_required check for user {current_user.id}, is_admin: {current_user.is_admin if current_user else 'None'}")
         if not current_user.is_admin:
             return jsonify({'error': 'Admin privileges required'}), 403
         return f(*args, **kwargs)

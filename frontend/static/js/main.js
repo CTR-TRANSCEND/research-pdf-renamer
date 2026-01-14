@@ -665,7 +665,7 @@ function updateAuthUI(user) {
                 <span class="text-sm text-gray-700">Welcome, <span class="font-semibold">${user.name}</span></span>
                 ${!user.is_approved ? '<span class="px-2 py-1 text-xs bg-yellow-100 text-yellow-800 rounded-full">Pending Approval</span>' : ''}
                 <div class="relative">
-                    <button onclick="toggleUserMenu()" class="text-gray-700 hover:text-indigo-600">
+                    <button onclick="toggleUserMenu(event)" class="text-gray-700 hover:text-indigo-600">
                         <i class="fas fa-user-circle text-xl"></i>
                     </button>
                 </div>
@@ -687,9 +687,31 @@ function updateAuthUI(user) {
 }
 
 // Toggle user menu
-function toggleUserMenu() {
+function toggleUserMenu(event) {
     const userMenu = document.getElementById('user-menu');
-    userMenu.classList.toggle('hidden');
+
+    // Toggle visibility
+    const isHidden = userMenu.classList.toggle('hidden');
+
+    // If showing the menu, position it below the button
+    if (!isHidden) {
+        // Get the button element (either from event or by finding the user icon button)
+        const button = event?.target?.closest('button') ||
+                       document.querySelector('button[onclick="toggleUserMenu()"]') ||
+                       document.querySelector('.fa-user-circle')?.closest('button');
+
+        if (button) {
+            const buttonRect = button.getBoundingClientRect();
+            const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+            const scrollLeft = window.pageXOffset || document.documentElement.scrollLeft;
+
+            // Position menu below the button, aligned to the right
+            userMenu.style.position = 'absolute';
+            userMenu.style.top = (buttonRect.bottom + scrollTop + 4) + 'px';
+            userMenu.style.right = 'auto';
+            userMenu.style.left = (buttonRect.left + scrollLeft) + 'px';
+        }
+    }
 }
 
 // Close user menu when clicking outside
@@ -851,8 +873,11 @@ async function logout() {
         // Always clear local data
         localStorage.removeItem('auth_token');
         currentUser = null;
+        // Clear the authorization header from axios defaults
+        delete axios.defaults.headers.common['Authorization'];
         updateAuthUI(null);
         showToast('Logged out successfully', 'success');
+        // Now load the anonymous user limits (without auth header)
         loadUserLimits();
     }
 }

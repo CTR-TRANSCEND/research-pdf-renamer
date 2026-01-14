@@ -20,7 +20,7 @@
 {% block content %}
 <div class="max-w-7xl mx-auto py-8 px-4">
     <!-- User Profile Menu (hidden by default) -->
-    <div id="user-menu" class="hidden fixed top-4 right-4 bg-white rounded-lg shadow-lg p-4 z-30 min-w-[200px]">
+    <div id="user-menu" class="hidden absolute bg-white rounded-lg shadow-lg p-4 z-30 min-w-[200px]">
         <div class="flex items-center mb-3">
             <div class="w-10 h-10 bg-indigo-600 rounded-full flex items-center justify-center text-white font-bold mr-3">
                 <span id="user-initials">U</span>
@@ -560,7 +560,7 @@
                 <div class="relative">
                     <span class="text-sm text-gray-700">Welcome, <span class="font-semibold">${user.name}</span></span>
                     ${!user.is_approved ? '<span class="ml-2 px-2 py-1 text-xs bg-yellow-100 text-yellow-800 rounded-full">Pending Approval</span>' : ''}
-                    <button onclick="toggleUserMenu()" class="ml-2 text-gray-700 hover:text-indigo-600">
+                    <button onclick="toggleUserMenu(event)" class="ml-2 text-gray-700 hover:text-indigo-600">
                         <i class="fas fa-user-circle text-xl"></i>
                     </button>
                 </div>
@@ -578,10 +578,31 @@
         }
     }
 
-    function toggleUserMenu() {
+    function toggleUserMenu(event) {
         const userMenu = document.getElementById('user-menu');
         if (userMenu) {
-            userMenu.classList.toggle('hidden');
+            // Toggle visibility
+            const isHidden = userMenu.classList.toggle('hidden');
+
+            // If showing the menu, position it below the button
+            if (!isHidden) {
+                // Get the button element (either from event or by finding the user icon button)
+                const button = event?.target?.closest('button') ||
+                               document.querySelector('button[onclick="toggleUserMenu(event)"]') ||
+                               document.querySelector('.fa-user-circle')?.closest('button');
+
+                if (button) {
+                    const buttonRect = button.getBoundingClientRect();
+                    const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+                    const scrollLeft = window.pageXOffset || document.documentElement.scrollLeft;
+
+                    // Position menu below the button
+                    userMenu.style.position = 'absolute';
+                    userMenu.style.top = (buttonRect.bottom + scrollTop + 4) + 'px';
+                    userMenu.style.right = 'auto';
+                    userMenu.style.left = (buttonRect.left + scrollLeft) + 'px';
+                }
+            }
         }
     }
 
