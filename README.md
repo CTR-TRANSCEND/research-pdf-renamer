@@ -55,7 +55,7 @@
 
 ```bash
 # Clone the repository
-git clone https://github.com/windysky/ResearchPDFFileRenamer.git
+git clone https://github.com/hurlab/research-pdf-renamer.git
 cd ResearchPDFFileRenamerGLM
 
 # Run the setup script
