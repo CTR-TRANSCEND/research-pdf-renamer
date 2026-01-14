@@ -3,14 +3,40 @@ import json
 import os
 import re
 import httpx
-from typing import Dict, Optional
+import logging
+from typing import Dict, Optional, Tuple
+from enum import Enum
+
+# Configure logging
+logger = logging.getLogger(__name__)
+
+class ExtractionError(Enum):
+    """Types of extraction errors for better error handling."""
+    INVALID_API_KEY = "invalid_api_key"
+    RATE_LIMIT_EXCEEDED = "rate_limit_exceeded"
+    TOKEN_LIMIT_EXCEEDED = "token_limit_exceeded"
+    NETWORK_ERROR = "network_error"
+    API_ERROR = "api_error"
+    INVALID_RESPONSE = "invalid_response"
+    TEXT_TOO_SHORT = "text_too_short"
+    SERVICE_UNAVAILABLE = "service_unavailable"
+    UNKNOWN_ERROR = "unknown_error"
 
 class LLMService:
     def __init__(self, config=None):
         self.config = config or {}
-        self.provider = self.config.get('LLM_PROVIDER', 'openai')
-        self.model = self.config.get('LLM_MODEL', 'gpt-4o-mini')
+        self.provider = self.config.get('LLM_PROVIDER') or 'openai'
+        self.model = self.config.get('LLM_MODEL') or 'gpt-4o-mini'
         self.api_key = self._load_api_key()
+
+        # Configure retry and timeout settings
+        self.max_retries = self.config.get('LLM_MAX_RETRIES') or 3
+        self.request_timeout = self.config.get('LLM_REQUEST_TIMEOUT') or 60
+        self.retry_delay = self.config.get('LLM_RETRY_DELAY') or 1
+
+        # Text processing limits
+        self.min_text_length = self.config.get('MIN_TEXT_LENGTH') or 50
+        self.max_text_length = self.config.get('MAX_TEXT_LENGTH') or 8000
 
         if self.provider == 'openai':
             # Create OpenAI client - simplified initialization for newer OpenAI library
@@ -28,23 +54,43 @@ class LLMService:
                 )
 
     def _load_api_key(self) -> str:
-        """Load API key from database, environment, or file (in that order)."""
-        # Try to load from database first (most preferred)
-        try:
-            from backend.models import SystemSettings
-            db_api_key = SystemSettings.get_api_key('openai')
-            if db_api_key:
-                return db_api_key
-        except Exception as e:
-            # Database might not be initialized yet, continue to fallbacks
-            print(f"Note: Could not load API key from database: {e}")
+        """Load API key from environment variables (primary), database (deprecated fallback), or file (legacy)."""
+        provider_upper = self.provider.upper()
 
-        # Check environment variable
-        api_key = os.environ.get('OPENAI_API_KEY')
-        if api_key:
-            return api_key
+        # 1. Check environment variable first (highest priority - recommended method)
+        env_var_names = {
+            'OPENAI': ['OPENAI_API_KEY', 'OPENAI_KEY'],
+            'ANTHROPIC': ['ANTHROPIC_API_KEY', 'ANTHROPIC_KEY'],
+            'COHERE': ['COHERE_API_KEY', 'COHERE_KEY'],
+            'GOOGLE': ['GOOGLE_API_KEY', 'GEMINI_API_KEY', 'GOOGLE_KEY'],
+            'OLLAMA': ['OLLAMA_API_KEY'],  # Ollama API key is optional
+            'OPENAI-COMPATIBLE': ['OPENAI_COMPATIBLE_API_KEY']  # OpenAI-compatible API key is optional
+        }
 
-        # Try to load from APISetting.txt (legacy support)
+        if provider_upper in env_var_names:
+            for env_var in env_var_names[provider_upper]:
+                api_key = os.environ.get(env_var)
+                if api_key:
+                    logger.info(f"Loaded API key from environment variable: {env_var}")
+                    return api_key
+
+        # For Ollama and OpenAI-Compatible, API key is optional - return None if not found
+        if self.provider in ['ollama', 'openai-compatible']:
+            logger.info(f"No {self.provider} API key found (optional)")
+            return None
+
+        # 2. Database fallback (deprecated - will be removed in future versions)
+        if self.provider not in ['ollama', 'openai-compatible']:
+            try:
+                from backend.models import SystemSettings
+                db_api_key = SystemSettings.get_api_key(self.provider)
+                if db_api_key:
+                    logger.warning(f"API key loaded from database for {self.provider}. This method is deprecated. Please set {env_var_names[self.provider][0]} environment variable instead.")
+                    return db_api_key
+            except Exception as e:
+                logger.debug(f"Could not load API key from database: {e}")
+
+        # 3. Try to load from APISetting.txt (legacy support)
         api_key_file = self.config.get('API_KEY_FILE', 'APISetting.txt')
         try:
             with open(api_key_file, 'r') as f:
@@ -56,45 +102,316 @@ class LLMService:
 
         raise ValueError(f"API key not found. Please configure via Admin Panel, set OPENAI_API_KEY environment variable, or create {api_key_file}")
 
-    def extract_paper_metadata(self, text: str, user_preferences: Optional[Dict] = None) -> Optional[Dict]:
+    def extract_paper_metadata(self, text: str, user_preferences: Optional[Dict] = None) -> Tuple[Optional[Dict], Optional[ExtractionError]]:
         """
         Extract metadata from research paper text.
-        Returns dict with author, year, title, and suggested filename.
+        Returns tuple of (metadata_dict, error_type).
         """
-        if self.provider == 'openai':
-            return self._extract_with_openai(text, user_preferences)
-        elif self.provider == 'ollama':
-            return self._extract_with_ollama(text, user_preferences)
-        else:
-            raise ValueError(f"Unsupported LLM provider: {self.provider}")
+        # Validate input text
+        if not text or not text.strip():
+            return None, ExtractionError.TEXT_TOO_SHORT
 
-    def _extract_with_openai(self, text: str, user_preferences: Optional[Dict] = None) -> Optional[Dict]:
-        """Extract metadata using OpenAI API."""
+        text = text.strip()
+        if len(text) < self.min_text_length:
+            logger.warning(f"Text too short for extraction: {len(text)} characters")
+            return None, ExtractionError.TEXT_TOO_SHORT
+
+        # Truncate text if too long
+        if len(text) > self.max_text_length:
+            text = text[:self.max_text_length] + "..."
+            logger.info(f"Text truncated to {self.max_text_length} characters for extraction")
+
+        try:
+            if self.provider == 'openai':
+                return self._extract_with_openai(text, user_preferences)
+            elif self.provider == 'ollama':
+                return self._extract_with_ollama(text, user_preferences)
+            elif self.provider == 'openai-compatible':
+                # OpenAI-compatible servers use the same extraction logic as Ollama with server type detection
+                return self._extract_with_ollama(text, user_preferences)
+            else:
+                logger.error(f"Unsupported LLM provider: {self.provider}")
+                return None, ExtractionError.SERVICE_UNAVAILABLE
+
+        except Exception as e:
+            logger.error(f"Unexpected error during metadata extraction: {type(e).__name__}: {str(e)}")
+            return None, ExtractionError.UNKNOWN_ERROR
+
+    def _extract_with_openai(self, text: str, user_preferences: Optional[Dict] = None) -> Tuple[Optional[Dict], Optional[ExtractionError]]:
+        """Extract metadata using OpenAI API with retry logic and comprehensive error handling."""
+        prompt = self._create_prompt(text, user_preferences)
+
+        for attempt in range(self.max_retries):
+            try:
+                logger.debug(f"OpenAI extraction attempt {attempt + 1}/{self.max_retries}")
+
+                response = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=[
+                        {"role": "system", "content": "You are an expert at analyzing academic research papers. Extract metadata accurately and format as JSON."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    temperature=0.1,
+                    max_tokens=500,
+                    timeout=self.request_timeout
+                )
+
+                if not response.choices or not response.choices[0].message:
+                    logger.error("Invalid response from OpenAI API: no choices or message")
+                    return None, ExtractionError.INVALID_RESPONSE
+
+                content = response.choices[0].message.content
+                if not content:
+                    logger.error("Empty response content from OpenAI API")
+                    return None, ExtractionError.INVALID_RESPONSE
+
+                metadata = self._parse_response(content)
+                if metadata:
+                    logger.info(f"Successfully extracted metadata on attempt {attempt + 1}")
+                    return metadata, None
+                else:
+                    logger.warning(f"Failed to parse response on attempt {attempt + 1}")
+                    if attempt == self.max_retries - 1:
+                        return None, ExtractionError.INVALID_RESPONSE
+
+            except openai.AuthenticationError as e:
+                logger.error(f"OpenAI authentication error: {e}")
+                return None, ExtractionError.INVALID_API_KEY
+
+            except openai.RateLimitError as e:
+                logger.warning(f"OpenAI rate limit exceeded on attempt {attempt + 1}: {e}")
+                if attempt < self.max_retries - 1:
+                    import time
+                    time.sleep(self.retry_delay * (2 ** attempt))  # Exponential backoff
+                else:
+                    return None, ExtractionError.RATE_LIMIT_EXCEEDED
+
+            except openai.APITimeoutError as e:
+                logger.warning(f"OpenAI API timeout on attempt {attempt + 1}: {e}")
+                if attempt == self.max_retries - 1:
+                    return None, ExtractionError.NETWORK_ERROR
+
+            except openai.APIConnectionError as e:
+                logger.warning(f"OpenAI API connection error on attempt {attempt + 1}: {e}")
+                if attempt < self.max_retries - 1:
+                    import time
+                    time.sleep(self.retry_delay)
+                else:
+                    return None, ExtractionError.NETWORK_ERROR
+
+            except openai.BadRequestError as e:
+                # This could be due to token limits or invalid request
+                if "token" in str(e).lower():
+                    logger.error(f"Token limit exceeded: {e}")
+                    # Try with shorter text
+                    if attempt == 0 and len(text) > 2000:
+                        # Retry with shorter text
+                        text = text[:2000] + "..."
+                        logger.info("Retrying with shorter text due to token limit")
+                        continue
+                    return None, ExtractionError.TOKEN_LIMIT_EXCEEDED
+                else:
+                    logger.error(f"OpenAI API bad request: {e}")
+                    return None, ExtractionError.API_ERROR
+
+            except openai.APIError as e:
+                logger.error(f"OpenAI API error on attempt {attempt + 1}: {e}")
+                if attempt < self.max_retries - 1:
+                    import time
+                    time.sleep(self.retry_delay)
+                else:
+                    return None, ExtractionError.API_ERROR
+
+            except Exception as e:
+                logger.error(f"Unexpected error calling OpenAI API on attempt {attempt + 1}: {type(e).__name__}: {str(e)}")
+                if attempt == self.max_retries - 1:
+                    return None, ExtractionError.UNKNOWN_ERROR
+
+        logger.error(f"All {self.max_retries} attempts failed")
+        return None, ExtractionError.UNKNOWN_ERROR
+
+    def _extract_with_ollama(self, text: str, user_preferences: Optional[Dict] = None) -> Tuple[Optional[Dict], Optional[ExtractionError]]:
+        """Extract metadata using Ollama API or OpenAI-compatible API."""
+        import requests
+        import json
+
+        # Get Ollama URL from config
+        ollama_url = self.config.get('OLLAMA_URL', 'http://localhost:11434')
+
+        # Determine server type based on provider
+        # - If provider is 'openai-compatible', always use OpenAI-compatible endpoint
+        # - If provider is 'ollama', check database for detected server type, default to native
+        if self.provider == 'openai-compatible':
+            server_type = 'openai-compatible'
+            logger.info(f"Provider is OpenAI-Compatible, using OpenAI-compatible endpoint")
+        else:
+            # Provider is 'ollama' - get the server type from database
+            server_type = 'ollama-native'
+            try:
+                from backend.models import SystemSettings
+                stored_server_type = SystemSettings.get_setting('ollama_server_type')
+                if stored_server_type:
+                    server_type = stored_server_type
+                    logger.info(f"Using detected server type: {server_type}")
+            except Exception as e:
+                logger.warning(f"Could not retrieve server type from database: {e}. Using default: ollama-native")
+
+        # Prepare headers (optional API key if provided)
+        headers = {'Content-Type': 'application/json'}
+        if self.api_key:
+            headers['Authorization'] = f'Bearer {self.api_key}'
+
+        try:
+            if server_type == 'openai-compatible':
+                # Use OpenAI-compatible /v1/completions endpoint
+                logger.info(f"Using OpenAI-compatible endpoint for {self.model}")
+                return self._extract_openai_compatible(ollama_url, text, user_preferences, headers)
+            else:
+                # Use native Ollama /api/generate endpoint
+                logger.info(f"Using native Ollama endpoint for {self.model}")
+                return self._extract_ollama_native(ollama_url, text, user_preferences, headers)
+
+        except Exception as e:
+            logger.error(f"Unexpected error during Ollama extraction: {type(e).__name__}: {str(e)}")
+            return None, ExtractionError.UNKNOWN_ERROR
+
+    def _extract_openai_compatible(self, ollama_url: str, text: str, user_preferences: Optional[Dict], headers: dict) -> Tuple[Optional[Dict], Optional[ExtractionError]]:
+        """Extract metadata using OpenAI-compatible /v1/completions endpoint."""
+        import requests
+        import json
+
+        # Create prompt
         prompt = self._create_prompt(text, user_preferences)
 
         try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": "You are an expert at analyzing academic research papers. Extract metadata accurately and format as JSON."},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.1,
-                max_tokens=500
+            # Call OpenAI-compatible completions endpoint
+            response = requests.post(
+                f"{ollama_url}/v1/completions",
+                headers=headers,
+                json={
+                    "model": self.model,
+                    "prompt": prompt,
+                    "temperature": 0.0,
+                    "max_tokens": 500
+                },
+                timeout=self.request_timeout
             )
 
-            content = response.choices[0].message.content
-            return self._parse_response(content)
+            response.raise_for_status()
+            result = response.json()
 
-        except Exception as e:
-            print(f"Error calling OpenAI API: {e}")
-            return None
+            # Extract the response text from OpenAI-compatible format
+            if 'choices' in result and len(result['choices']) > 0:
+                response_text = result['choices'][0].get('text', '')
+            else:
+                logger.error("OpenAI-compatible response missing choices array")
+                return None, ExtractionError.INVALID_RESPONSE
 
-    def _extract_with_ollama(self, text: str, user_preferences: Optional[Dict] = None) -> Optional[Dict]:
-        """Extract metadata using local Ollama model."""
-        # TODO: Implement Ollama integration
-        # This would require requests library and Ollama running locally
-        raise NotImplementedError("Ollama integration not yet implemented")
+            if not response_text:
+                logger.error("Empty response from OpenAI-compatible server")
+                return None, ExtractionError.INVALID_RESPONSE
+
+            # Parse JSON response
+            metadata = self._parse_response(response_text)
+            if not metadata:
+                logger.error(f"Failed to parse OpenAI-compatible response. Response text: {response_text[:500]}")
+                return None, ExtractionError.INVALID_RESPONSE
+
+            # Debug: Log parsed metadata
+            logger.debug(f"Parsed metadata: {metadata}")
+
+            # Validate required fields
+            if not metadata.get('author'):
+                logger.warning(f"OpenAI-compatible response missing author field. Metadata keys: {list(metadata.keys())}")
+                return None, ExtractionError.INVALID_RESPONSE
+
+            return metadata, None
+
+        except requests.exceptions.Timeout:
+            logger.error(f"OpenAI-compatible request timeout after {self.request_timeout}s")
+            return None, ExtractionError.NETWORK_ERROR
+        except requests.exceptions.ConnectionError as e:
+            logger.error(f"OpenAI-compatible connection error: {e}")
+            return None, ExtractionError.SERVICE_UNAVAILABLE
+        except requests.exceptions.HTTPError as e:
+            logger.error(f"OpenAI-compatible HTTP error: {e.response.status_code}")
+            if e.response.status_code == 404:
+                logger.error(f"Model '{self.model}' not found or endpoint not supported. Server may be native Ollama.")
+                return None, ExtractionError.SERVICE_UNAVAILABLE
+            return None, ExtractionError.API_ERROR
+
+    def _extract_ollama_native(self, ollama_url: str, text: str, user_preferences: Optional[Dict], headers: dict) -> Tuple[Optional[Dict], Optional[ExtractionError]]:
+        """Extract metadata using native Ollama /api/generate endpoint."""
+        import requests
+        import json
+
+        # Create prompt
+        prompt = self._create_prompt(text, user_preferences)
+
+        try:
+            # Call Ollama generate API
+            response = requests.post(
+                f"{ollama_url}/api/generate",
+                headers=headers,
+                json={
+                    "model": self.model,
+                    "prompt": prompt,
+                    "stream": False,
+                    "options": {
+                        "temperature": 0.0
+                    }
+                },
+                timeout=self.request_timeout
+            )
+
+            response.raise_for_status()
+            result = response.json()
+
+            # Extract the response text
+            response_text = result.get('response', '')
+
+            if not response_text:
+                logger.error("Empty response from Ollama")
+                return None, ExtractionError.INVALID_RESPONSE
+
+            # Parse JSON response
+            try:
+                # Try to extract JSON from the response
+                # Ollama might include extra text, so we need to find the JSON part
+                json_start = response_text.find('{')
+                json_end = response_text.rfind('}') + 1
+
+                if json_start >= 0 and json_end > json_start:
+                    json_str = response_text[json_start:json_end]
+                    metadata = json.loads(json_str)
+                else:
+                    # Fallback: try parsing the entire response
+                    metadata = json.loads(response_text)
+
+                # Validate required fields
+                if not metadata.get('author'):
+                    logger.warning("Ollama response missing author field")
+                    return None, ExtractionError.INVALID_RESPONSE
+
+                return metadata, None
+
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to parse Ollama JSON response: {e}")
+                logger.debug(f"Response text: {response_text[:500]}")
+                return None, ExtractionError.INVALID_RESPONSE
+
+        except requests.exceptions.Timeout:
+            logger.error(f"Ollama request timeout after {self.request_timeout}s")
+            return None, ExtractionError.NETWORK_ERROR
+        except requests.exceptions.ConnectionError as e:
+            logger.error(f"Ollama connection error: {e}")
+            return None, ExtractionError.SERVICE_UNAVAILABLE
+        except requests.exceptions.HTTPError as e:
+            logger.error(f"Ollama HTTP error: {e.response.status_code}")
+            if e.response.status_code == 404:
+                logger.error(f"Model '{self.model}' not found on Ollama server")
+                return None, ExtractionError.SERVICE_UNAVAILABLE
+            return None, ExtractionError.API_ERROR
 
     def _create_prompt(self, text: str, user_preferences: Optional[Dict] = None) -> str:
         """Create the prompt for LLM."""
@@ -107,10 +424,8 @@ class LLMService:
             if filename_format == 'Custom':
                 custom_format = user_preferences.get('custom_filename_format', '{author}_{year}_{title}')
 
-        # Limit text length to avoid token limits
-        max_text_length = 3000
-        if len(text) > max_text_length:
-            text = text[:max_text_length] + "..."
+        # Text is already truncated in extract_paper_metadata method
+        # No need to truncate again here
 
         # Format instructions based on user preference
         format_instructions = self._get_format_instructions(filename_format, custom_format)
@@ -219,26 +534,83 @@ Rules for filename:
         return format_rules.get(filename_format, format_rules['Author_Year_Journal_Keywords'])
 
     def _parse_response(self, content: str) -> Optional[Dict]:
-        """Parse LLM response to extract JSON."""
-        try:
-            # Try to find JSON in the response
-            json_match = re.search(r'\{.*\}', content, re.DOTALL)
-            if json_match:
-                json_str = json_match.group()
-                return json.loads(json_str)
-            else:
-                # Fallback: try to parse entire response as JSON
-                return json.loads(content)
-        except json.JSONDecodeError as e:
-            print(f"Error parsing LLM response: {e}")
-            print(f"Response content: {content}")
+        """Parse LLM response to extract JSON with better error handling."""
+        if not content:
+            logger.error("Empty content provided to _parse_response")
             return None
 
+        try:
+            # First try to find JSON block with markdown code fences
+            code_fence_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', content, re.DOTALL | re.IGNORECASE)
+            if code_fence_match:
+                json_str = code_fence_match.group(1)
+                logger.debug("Found JSON in code fences")
+                return json.loads(json_str)
+
+            # Try to find JSON in the response (looking for outer braces)
+            json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', content, re.DOTALL)
+            if json_match:
+                json_str = json_match.group()
+                logger.debug("Found JSON with basic regex")
+                return json.loads(json_str)
+
+            # Fallback: try to parse entire response as JSON
+            try:
+                logger.debug("Attempting to parse entire response as JSON")
+                return json.loads(content)
+            except json.JSONDecodeError:
+                # If that fails, try to extract key-value pairs manually
+                logger.debug("Attempting manual extraction of key-value pairs")
+                return self._manual_parse_response(content)
+
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON decode error: {e}")
+            logger.debug(f"Response content (first 500 chars): {content[:500]}")
+            return None
+        except Exception as e:
+            logger.error(f"Unexpected error parsing response: {type(e).__name__}: {e}")
+            return None
+
+    def _manual_parse_response(self, content: str) -> Optional[Dict]:
+        """Manually parse response when JSON parsing fails."""
+        result = {}
+
+        # Look for common patterns in the response
+        patterns = {
+            'author': [r'author["\']?\s*[:=]\s*["\']([^"\']+)["\']', r'author["\']?\s*[:=]\s*([^,}\n]+)'],
+            'year': [r'year["\']?\s*[:=]\s*(\d{4})'],
+            'journal': [r'journal["\']?\s*[:=]\s*["\']([^"\']+)["\']', r'journal["\']?\s*[:=]\s*([^,}\n]+)'],
+            'title': [r'title["\']?\s*[:=]\s*["\']([^"\']+)["\']', r'title["\']?\s*[:=]\s*([^,}\n]+)'],
+            'keywords': [r'keywords["\']?\s*[:=]\s*["\']([^"\']+)["\']', r'keywords["\']?\s*[:=]\s*([^,}\n]+)'],
+            'suggested_filename': [r'suggested_filename["\']?\s*[:=]\s*["\']([^"\']+)["\']', r'suggested_filename["\']?\s*[:=]\s*([^,}\n]+)']
+        }
+
+        for key, key_patterns in patterns.items():
+            for pattern in key_patterns:
+                match = re.search(pattern, content, re.IGNORECASE)
+                if match:
+                    result[key] = match.group(1).strip()
+                    break
+
+        # Only return result if we found at least some useful fields
+        if result.get('author') or result.get('title') or result.get('suggested_filename'):
+            logger.info(f"Manual parsing extracted: {list(result.keys())}")
+            return result
+
+        return None
+
     def validate_filename(self, filename: str) -> bool:
-        """Validate that the suggested filename follows the required format."""
-        # Check format: Author_Year_Journal_KeyWords.pdf
-        # Allows letters, numbers, hyphens, and underscores
-        pattern = r'^[A-Za-z]+_\d{4}_[A-Za-z0-9]+(?:_[A-Za-z0-9-]+)*\.pdf$'
+        """Validate that the suggested filename follows safe filename practices."""
+        if not filename:
+            return False
+
+        # Check for .pdf extension
+        if not filename.lower().endswith('.pdf'):
+            return False
+
+        # Check for valid characters: letters, numbers, hyphens, underscores, and dots
+        # Disallow dangerous characters like / \ : * ? " < > |
+        pattern = r'^[A-Za-z0-9._-]+\.pdf$'
         return bool(re.match(pattern, filename))
 
     def sanitize_filename(self, filename: str) -> str:
@@ -252,3 +624,18 @@ Rules for filename:
             name, ext = os.path.splitext(filename)
             filename = name[:250] + ext
         return filename
+
+    def get_error_message(self, error: ExtractionError) -> str:
+        """Get user-friendly error message for extraction error."""
+        messages = {
+            ExtractionError.INVALID_API_KEY: "Invalid API key. Please configure a valid OpenAI API key.",
+            ExtractionError.RATE_LIMIT_EXCEEDED: "API rate limit exceeded. Please try again in a few minutes.",
+            ExtractionError.TOKEN_LIMIT_EXCEEDED: "Text too long for processing. Please try with a shorter document.",
+            ExtractionError.NETWORK_ERROR: "Network connection error. Please check your internet connection and try again.",
+            ExtractionError.API_ERROR: "API service error. Please try again later.",
+            ExtractionError.INVALID_RESPONSE: "Unable to process the response from the AI service. Please try again.",
+            ExtractionError.TEXT_TOO_SHORT: "Document text is too short for metadata extraction. Please ensure the PDF contains readable text.",
+            ExtractionError.SERVICE_UNAVAILABLE: "AI service is currently unavailable. Please try again later.",
+            ExtractionError.UNKNOWN_ERROR: "An unexpected error occurred. Please try again or contact support if the issue persists."
+        }
+        return messages.get(error, str(error.value))

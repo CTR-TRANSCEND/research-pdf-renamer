@@ -13,21 +13,18 @@
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div class="flex justify-between h-16">
                 <div class="flex items-center">
-                    <a href="/" class="text-xl font-bold text-indigo-600">
+                    <a href="{{ url_for('main.index') }}" class="text-xl font-bold text-indigo-600">
                         <i class="fas fa-file-pdf mr-2"></i>Research PDF File Renamer
                     </a>
                 </div>
                 <div class="flex items-center space-x-4">
-                    <a href="/" class="text-gray-600 hover:text-gray-900">
+                    <a href="{{ url_for('main.index') }}" class="text-gray-600 hover:text-gray-900">
                         <i class="fas fa-home mr-1"></i>Home
                     </a>
-                    <a href="/profile" class="text-gray-600 hover:text-gray-900">
-                        <i class="fas fa-user mr-1"></i>Profile
-                    </a>
-                    <a href="/admin" class="text-gray-600 hover:text-gray-900">
+                    <a href="{{ url_for('main.admin_panel') }}" class="text-gray-600 hover:text-gray-900">
                         <i class="fas fa-cog mr-1"></i>Admin
                     </a>
-                    <a href="/auth/logout" class="text-gray-600 hover:text-gray-900">
+                    <a href="{{ url_for('auth.logout') }}" class="text-gray-600 hover:text-gray-900">
                         <i class="fas fa-sign-out-alt mr-1"></i>Logout
                     </a>
                 </div>
@@ -161,7 +158,7 @@
                     </p>
                     <div class="bg-gray-50 p-4 rounded-lg">
                         <p class="text-gray-700">
-                            <strong>Email:</strong> support@researchpdfrenamer.com<br>
+                            <strong>Email:</strong> {% if contact_email %}<a href="mailto:{{ contact_email }}" class="text-indigo-600 hover:text-indigo-800">{{ contact_email }}</a>{% else %}<em class="text-gray-500">Not configured</em>{% endif %}<br>
                             <strong>Service:</strong> Research PDF File Renamer
                         </p>
                     </div>
@@ -182,9 +179,9 @@
             <div class="text-center">
                 <p class="text-gray-400">© 2025 Research PDF File Renamer. All rights reserved.</p>
                 <div class="mt-4 space-x-4">
-                    <a href="/terms" class="text-gray-400 hover:text-white">Terms & Conditions</a>
-                    <a href="/privacy" class="text-gray-400 hover:text-white">Privacy Policy</a>
-                    <a href="/contact" class="text-gray-400 hover:text-white">Contact</a>
+                    <a href="{{ url_for('main.terms') }}" class="text-gray-400 hover:text-white">Terms & Conditions</a>
+                    <a href="{{ url_for('main.privacy') }}" class="text-gray-400 hover:text-white">Privacy Policy</a>
+                    <a href="{{ url_for('main.contact') }}" class="text-gray-400 hover:text-white">Contact</a>
                 </div>
             </div>
         </div>

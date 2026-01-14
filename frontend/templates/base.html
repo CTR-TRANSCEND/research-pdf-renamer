@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Research PDF File Renamer{% endblock %}</title>
+    <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}">
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
@@ -32,7 +33,7 @@
 </head>
 <body class="bg-gray-50 min-h-screen">
     <!-- Navigation -->
-    <nav class="bg-white shadow-md">
+    <nav class="bg-white shadow-md relative">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div class="flex justify-between h-16">
                 <div class="flex items-center">
@@ -40,9 +41,9 @@
                     <h1 class="text-xl font-bold text-gray-900">Research PDF Renamer</h1>
                 </div>
                 <div class="flex items-center space-x-4">
-                    <a href="/" class="text-gray-700 hover:text-indigo-600 px-3 py-2 rounded-md text-sm font-medium">Home</a>
+                    <a href="{{ url_for('main.index') }}" class="text-gray-700 hover:text-indigo-600 px-3 py-2 rounded-md text-sm font-medium">Home</a>
                     <div id="auth-section">
-                        <!-- Auth buttons will be inserted here -->
+                        <!-- Auth buttons and profile menu will be inserted here -->
                     </div>
                 </div>
             </div>
@@ -70,6 +71,11 @@
     <div id="modal-container"></div>
 
     <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <!-- Set global API base URL for reverse proxy support -->
+    <script>
+        window.API_BASE_URL = '{{ request.script_root }}/api';
+        window.STATIC_URL = '{{ url_for('static', filename='') }}';
+    </script>
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
     {% block extra_js %}{% endblock %}
 </body>

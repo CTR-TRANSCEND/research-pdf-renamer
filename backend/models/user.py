@@ -22,7 +22,7 @@ class User(UserMixin, db.Model):
     filename_format = db.Column(db.String(100), default='Author_Year_Journal_Keywords')
     custom_filename_format = db.Column(db.String(200))
     auto_download = db.Column(db.Boolean, default=True)
-    max_files_per_session = db.Column(db.Integer, default=5)  # Admin configurable limit
+    max_files_per_session = db.Column(db.Integer, default=None)  # Admin configurable limit, None uses default per approval status
 
     # Relationships
     usage_logs = db.relationship('Usage', backref='user', lazy='dynamic', cascade='all, delete-orphan')
@@ -34,9 +34,18 @@ class User(UserMixin, db.Model):
         return bcrypt.checkpw(password.encode('utf-8'), self.password_hash.encode('utf-8'))
 
     def get_max_files(self):
-        # Use user-specific limit if set, otherwise fall back to default based on approval status
+        """
+        Get the maximum number of files per submission for this user.
+
+        Returns:
+            - User's custom limit if set (max_files_per_session)
+            - 30 for approved users (including admins)
+            - 5 for unapproved registered users
+        """
+        # Use user-specific limit if explicitly set
         if self.max_files_per_session is not None:
             return self.max_files_per_session
+        # Default: 30 for approved users, 5 for unapproved
         return 30 if self.is_approved else 5
 
     def is_user_active(self):

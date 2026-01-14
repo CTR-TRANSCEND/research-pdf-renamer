@@ -37,13 +37,20 @@ class SystemSettings(db.Model):
         if setting is None:
             return default
 
-        if setting.is_encrypted and setting.value:
+        if setting.is_encrypted:
+            # Handle encrypted values
+            if not setting.value:
+                # Empty value - record exists but no data
+                print(f"Warning: Encrypted setting {key} has empty value")
+                return default
+
             try:
                 cipher = cls._get_cipher()
                 decrypted = cipher.decrypt(setting.value.encode('utf-8'))
                 return decrypted.decode('utf-8')
             except Exception as e:
-                print(f"Error decrypting setting {key}: {e}")
+                print(f"Error decrypting setting {key}: {type(e).__name__}: {e}")
+                print(f"This may indicate a SECRET_KEY mismatch. The value was encrypted with a different key.")
                 return default
 
         return setting.value

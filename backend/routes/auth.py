@@ -3,7 +3,7 @@ from flask_login import login_user, logout_user, login_required, current_user
 from backend.models import User
 from backend.database import db
 from backend.utils import validate_email, validate_password, validate_name
-from backend.utils.auth import generate_token, refresh_token_if_needed
+from backend.utils.auth import generate_token, refresh_token_if_needed, auth_required
 from datetime import datetime
 
 auth = Blueprint('auth', __name__)
@@ -67,6 +67,17 @@ def register():
         db.session.rollback()
         return jsonify({'error': 'Registration failed'}), 500
 
+@auth.route('/login', methods=['GET'])
+def login_page():
+    """Handle GET requests to login (redirect from Flask-Login)."""
+    # Redirect to home page where login modal is available
+    from flask import redirect, url_for, request
+    from urllib.parse import quote
+    next_page = request.args.get('next', '')
+    # Use url_for to generate proper URL with /pdf-renamer prefix
+    index_url = url_for('main.index')
+    return redirect(f'{index_url}?login=true&next={quote(next_page)}')
+
 @auth.route('/login', methods=['POST'])
 def login():
     """Login existing user."""
@@ -106,7 +117,7 @@ def logout():
     return jsonify({'message': 'Logged out successfully'})
 
 @auth.route('/me', methods=['GET'])
-@login_required
+@auth_required
 def get_current_user():
     """Get current user info."""
     return jsonify({

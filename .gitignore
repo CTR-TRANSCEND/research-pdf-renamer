@@ -9,8 +9,54 @@ ENV/
 env/
 .venv
 
-# Archive (non-essential development artifacts)
-archive/
+# Test files
+test_*.py
+test_*.js
+test_*.mjs
+test_*.sh
+test_*.txt
+debug_*.py
+debug_*.mjs
+debug_*.sh
+check_*.py
+check_*.mjs
+check_*.sh
+playwright.config.js
+pytest.ini
+
+# Test outputs
+test-results/
+test_final/
+test_v2/
+screenshots/
+debug_screenshots/
+test_screenshots/
+coverage.json
+coverage.xml
+htmlcov/
+*.coverage
+
+# Test documentation
+BROWSER_*.md
+OLLAMA_*.md
+CRITICAL_*.md
+*_FIX_*.md
+*_TEST_*.md
+
+# Debug screenshots
+debug_*.png
+profile_page.png
+screenshot*.png
+
+# Node modules (if using npm)
+node_modules/
+package.json
+package-lock.json
+
+# Test PDFs (keep research PDFs in git)
+test.pdf
+1.pdf
+test_*.pdf
 
 # Flask
 instance/
@@ -27,6 +73,7 @@ APISetting.txt
 config.py
 *.key
 *.pem
+.secret_key
 
 # Uploads and temporary files
 uploads/
@@ -48,4 +95,159 @@ Thumbs.db
 logs/
 
 # Node modules (if using npm)
-node_modules/archive/
+node_modules/
+.VolumeIcon.icns
+.aws/credentials
+*.pyo
+.Trashes
+*_secret.*
+.moai/reports/
+*.key.*
+.moai/scripts/*sync*.sh
+.claude/skills/*/*/*secret*
+# Exclude all .moai/* by default
+.claude/.env.local*
+.env/
+.moai/temp/
+# Exclude local-only directories
+# Certificate files
+# Build Tools & Frameworks
+.LSOverride
+!.moai/specs/**
+# IDE & Editors
+# Secrets and Credentials (CRITICAL)
+# Build Artifacts & Distribution
+*.secret.*
+# Test Coverage
+.claude/settings.local.*.json
+# MoAI-ADK Package Distribution .gitignore
+*.sublime-workspace
+.firebase/
+[Dd]esktop.ini
+.claude/skills/*/secrets/
+# Linux
+api-key-*
+.vercel/
+# ===========================================
+.DocumentRevisions-V100
+*-backup/
+.claude/skills/*/.env*
+# .moai/ Directory Management
+# Logs & Temporary Files
+.claude/settings.local.json
+.uv-cache/
+.turbo/
+.moai/archive/
+.moai/cache/
+ehthumbs.db
+*.sublime-project
+!.moai/project/**
+*.dbm
+.tscache/
+.nuxt/
+*.sw?
+# Version: 0.33.0
+*.bak
+# Windows
+# Backups
+out/
+.uv_cache/
+*-api-key.*
+# Deployment & CI/CD
+*_secret=*
+*.backup
+!.moai/specs/
+.moai/scripts/sync-*.sh
+.moai/*
+*.rdb
+!.env.example
+.moai/error_logs/
+*-secret-key.*
+*.pfx
+.cursor/
+!.moai/scripts/**
+.moai/archived-skills/
+!.moai/scripts/
+!.moai/config/**
+.moai/scripts/sync-*.py
+!.moai/memory/
+*-key.*
+.netlify/
+*.temp
+*.tsbuildinfo
+*~
+# Virtual Environments
+!.moai/announcements/**
+.moai/logs/
+# Updated: 2026-01-10
+# Credential patterns in environment files
+.TemporaryItems
+secret-*.*
+.claude/skills/*/*/*key*
+# Cloud provider credentials
+.claude/skills/*/*/*token*
+*-secret.*
+*.egg-info/
+*.jks
+*.pyc
+.moai/config/config.json
+!.moai/project/
+*_token=*
+*.p12
+# Private keys (specific patterns to avoid false positives)
+.next/
+*_key.*
+.pytest_cache/
+htmlcov/
+# Python Cache & Bytecode
+.moai/scripts/phase*.py
+.github/workflows/*.yml.bak
+build/
+.env.*
+.moai/analytics/
+.aws/config
+private-key*
+coverage.json
+*.backup/
+*.egg
+.mypy_cache/
+# OS Files
+.venv/
+# ============================================
+.#*
+.gitlab-ci.yml.bak
+!.moai/config/
+# Environment files
+*.njsproj
+.ruff_cache/
+# Mac
+.AppleDouble
+# Purpose: Essential patterns for user projects
+.moai/backups/
+*.suo
+.moai/scripts/__pycache__/
+.moai/docs/
+# Node.js (for docs/Nextra)
+# Claude Code Configuration
+!.moai/memory/**
+!.moai/announcements/
+# Legacy config format (migrated to YAML in v0.32.0)
+.moai/scripts/phase*.sh
+*_backup_*/
+.moai/work/
+# FIXED: Issue #237 - Replaced overly broad *key* and *secret* patterns
+secret-key-*
+# Include tracked directories
+.claude/local/
+.fseventsd
+*.sln
+# Skill-specific credentials
+dist/
+.directory
+.Spotlight-V100
+*.tmp
+# Exclude local development scripts
+dist-ssr/
+*.pyd
+.moai-backups/
+.coverage

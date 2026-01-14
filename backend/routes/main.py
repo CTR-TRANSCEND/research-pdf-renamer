@@ -1,137 +1,124 @@
-from flask import Blueprint, render_template, jsonify, current_app, request
+from flask import (
+    Blueprint,
+    render_template,
+    jsonify,
+    current_app,
+    request,
+    redirect,
+    url_for,
+)
 from flask_login import current_user, login_required
+import jwt
+from backend.utils.auth import auth_required, admin_required as auth_admin_required
 
-main = Blueprint('main', __name__)
+main = Blueprint("main", __name__)
 
-@main.route('/')
+
+@main.route("/")
 def index():
     """Serve the main application page."""
-    return render_template('index.html')
+    return render_template("index.html")
 
-@main.route('/api/limits')
+
+@main.route("/api/limits")
 def get_limits():
     """Get user's current upload limits."""
-    if current_user.is_authenticated and current_user.is_approved:
-        # Approved registered users get their configured limits
-        return jsonify({
-            'max_files_per_submission': current_user.get_max_files(),
-            'max_submissions_per_day': 10,
-            'is_registered': True,
-            'is_approved': True,
-            'remaining_uses': 'Unlimited'
-        })
-    else:
-        # Both anonymous users and unapproved registered users get the same limits
-        if current_user.is_authenticated:
-            # For unapproved users, check if they have a custom limit, otherwise use default
-            max_files = current_user.get_max_files() if hasattr(current_user, 'max_files_per_session') else 5
-        else:
-            max_files = 5
+    from flask_login import AnonymousUserMixin
+    from backend.models import User
 
-        return jsonify({
-            'max_files_per_submission': max_files,
-            'max_submissions_per_day': 5,
-            'is_registered': current_user.is_authenticated if current_user else False,
-            'is_approved': False,
-            'remaining_uses': current_user.is_authenticated and not current_user.is_approved and 'Pending approval' or None
-        })
+    # First check if Flask-Login has a user (session-based auth)
+    if current_user.is_authenticated and not isinstance(
+        current_user, AnonymousUserMixin
+    ):
+        max_files = current_user.get_max_files()
+        return jsonify(
+            {
+                "max_files_per_submission": max_files,
+                "is_registered": True,
+                "is_approved": current_user.is_approved,
+                "is_admin": current_user.is_admin,
+            }
+        )
 
-@main.route('/profile')
-@login_required
+    # Then check for JWT token in Authorization header
+    auth_header = request.headers.get("Authorization")
+    if auth_header and auth_header.startswith("Bearer "):
+        token = auth_header[7:]
+        try:
+            payload = jwt.decode(
+                token, current_app.config["SECRET_KEY"], algorithms=["HS256"]
+            )
+            user_id = payload.get("user_id")
+            if user_id:
+                user = User.query.get(user_id)
+                if user:
+                    max_files = user.get_max_files()
+                    return jsonify(
+                        {
+                            "max_files_per_submission": max_files,
+                            "is_registered": True,
+                            "is_approved": user.is_approved,
+                            "is_admin": user.is_admin,
+                        }
+                    )
+        except Exception:
+            pass  # Invalid token, fall through to anonymous
+
+    # Anonymous users: 5 files per submission
+    return jsonify(
+        {
+            "max_files_per_submission": 5,
+            "is_registered": False,
+            "is_approved": False,
+            "is_admin": False,
+        }
+    )
+
+
+@main.route("/profile")
+@auth_required
 def profile():
     """User profile page."""
-    return render_template('profile.html')
+    return render_template("profile.html")
 
-@main.route('/api/health')
+
+@main.route("/api/health")
 def health_check():
     """Health check endpoint."""
-    return jsonify({
-        'status': 'healthy',
-        'version': '1.0.0'
-    })
+    return jsonify({"status": "healthy", "version": "1.0.0"})
 
-@main.route('/admin')
+
+@main.route("/admin")
 @login_required
 def admin_panel():
     """Admin panel page."""
-    if not current_user.is_authenticated or not current_user.is_admin:
-        return jsonify({'error': 'Admin access required'}), 403
-    return render_template('admin.html')
+    if not current_user.is_admin:
+        return redirect(url_for("main.index"))
+    return render_template("admin.html")
 
-@main.route('/terms')
+
+@main.route("/terms")
 def terms():
     """Terms and Conditions page."""
-    return render_template('terms.html')
-
-@main.route('/api/admin/setup-needed')
-def admin_setup_needed():
-    """Check if admin setup is needed."""
-    from backend.utils.admin_setup import check_admin_exists
     from backend.models import SystemSettings
 
-    setup_complete = SystemSettings.get_setting('admin_setup_complete', 'false')
-    admin_exists = check_admin_exists()
+    contact_email = SystemSettings.get_setting("contact_email", "")
+    return render_template("terms.html", contact_email=contact_email)
 
-    return jsonify({
-        'setup_needed': not admin_exists or setup_complete != 'true',
-        'admin_exists': admin_exists,
-        'setup_complete': setup_complete == 'true'
-    })
 
-@main.route('/api/admin/setup', methods=['POST'])
-def setup_admin():
-    """Create the first admin user."""
-    from backend.utils.admin_setup import check_admin_exists, create_first_admin
-    from backend.models import User
-    from backend.utils import validate_email, validate_password, validate_name
+@main.route("/privacy")
+def privacy():
+    """Privacy Policy page."""
+    from backend.models import SystemSettings
 
-    # Check if admin already exists
-    if check_admin_exists():
-        return jsonify({'error': 'Admin user already exists'}), 400
+    contact_email = SystemSettings.get_setting("contact_email", "")
+    return render_template("privacy.html", contact_email=contact_email)
 
-    # Get data from request
-    data = request.get_json()
-    email = data.get('email', '').strip()
-    password = data.get('password', '')
-    name = data.get('name', '').strip()
 
-    # Validate inputs
-    is_valid, message = validate_email(email)
-    if not is_valid:
-        return jsonify({'error': message}), 400
+@main.route("/contact")
+def contact():
+    """Contact page."""
+    from backend.models import SystemSettings
 
-    is_valid, message = validate_password(password)
-    if not is_valid:
-        return jsonify({'error': message}), 400
-
-    is_valid, message = validate_name(name)
-    if not is_valid:
-        return jsonify({'error': message}), 400
-
-    # Create admin
-    try:
-        if create_first_admin(email, password, name):
-            # Log in the new admin
-            admin = User.query.filter_by(email=email).first()
-            from flask_login import login_user
-            login_user(admin)
-
-            # Generate token
-            from backend.utils.auth import generate_token
-            token = generate_token(admin)
-
-            return jsonify({
-                'message': 'Admin user created successfully',
-                'user': {
-                    'id': admin.id,
-                    'email': admin.email,
-                    'name': admin.name,
-                    'is_admin': admin.is_admin,
-                    'is_approved': admin.is_approved
-                },
-                'token': token
-            }), 201
-        else:
-            return jsonify({'error': 'Failed to create admin user'}), 500
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    contact_email = SystemSettings.get_setting("contact_email", "")
+    return render_template("contact.html", contact_email=contact_email)

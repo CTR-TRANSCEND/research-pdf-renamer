@@ -12,6 +12,12 @@ class Usage(db.Model):
     success = db.Column(db.Boolean, default=True, nullable=False)  # Whether processing was successful
     timestamp = db.Column(db.DateTime, default=datetime.utcnow, nullable=False, index=True)
 
+    # Composite indexes for common query patterns
+    __table_args__ = (
+        db.Index('idx_user_timestamp', 'user_id', 'timestamp'),
+        db.Index('idx_user_timestamp_files', 'user_id', 'timestamp', 'files_processed'),
+    )
+
     def __repr__(self):
         user_info = f"User {self.user_id}" if self.user_id else f"Anonymous ({self.ip_address})"
         return f'<Usage {user_info}: {self.files_processed} files at {self.timestamp}>'

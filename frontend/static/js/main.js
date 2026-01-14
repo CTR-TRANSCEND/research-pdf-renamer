@@ -18,6 +18,12 @@ function initializeApp() {
     // Setup axios defaults
     axios.defaults.headers.common['X-Requested-With'] = 'XMLHttpRequest';
 
+    // Use the global API_BASE_URL set by the server (includes APPLICATION_ROOT)
+    // This allows the app to work both directly and behind reverse proxy
+    if (window.API_BASE_URL) {
+        axios.defaults.baseURL = window.API_BASE_URL;
+    }
+
     // Get CSRF token if available
     const token = document.querySelector('meta[name="csrf-token"]');
     if (token) {
@@ -153,7 +159,7 @@ function handleFiles(files) {
 
     // Check if adding these files would exceed the limit
     const currentFileCount = selectedFiles.length;
-    const maxFiles = userLimits?.max_files || 5;
+    const maxFiles = userLimits?.max_files_per_submission || 5;
     const newFileCount = currentFileCount + pdfFiles.length;
 
     if (newFileCount > maxFiles) {
@@ -290,7 +296,7 @@ async function processFiles() {
         });
 
         // Send request
-        const response = await axios.post('/api/upload', formData, {
+        const response = await axios.post('/upload', formData, {
             headers: {
                 'Content-Type': 'multipart/form-data'
             },
@@ -571,7 +577,7 @@ function updateFileProgress(fileName, status, percent, type = 'success') {
 // Load user limits
 async function loadUserLimits() {
     try {
-        const response = await axios.get('/api/limits');
+        const response = await axios.get('/limits');
         userLimits = response.data;
         updateLimitsDisplay();
     } catch (error) {
@@ -585,19 +591,22 @@ function updateLimitsDisplay() {
     const registerCTA = document.getElementById('register-cta');
 
     if (!userLimits) return;
+    if (!limitsText) return;
 
-    if (userLimits.is_registered && userLimits.is_approved) {
-        const totalDaily = userLimits.max_files_per_submission * userLimits.max_submissions_per_day;
-        limitsText.textContent = `You can upload up to ${userLimits.max_files_per_submission} files per submission (${userLimits.max_submissions_per_day} times/day = ${totalDaily} total daily)`;
-        registerCTA.classList.add('hidden');
-    } else if (userLimits.is_registered && !userLimits.is_approved) {
-        const totalDaily = userLimits.max_files_per_submission * userLimits.max_submissions_per_day;
-        limitsText.textContent = `Account pending approval. You can upload ${userLimits.max_files_per_submission} files (${userLimits.max_submissions_per_day} times/day = ${totalDaily} total daily).`;
-        registerCTA.classList.add('hidden');
-    } else {
-        const totalDaily = userLimits.max_files_per_submission * userLimits.max_submissions_per_day;
-        limitsText.textContent = `You can upload ${userLimits.max_files_per_submission} files each time as a non-registered user (${userLimits.max_submissions_per_day} times/day = ${totalDaily} total daily)`;
-        registerCTA.classList.remove('hidden');
+    // Display only file count limit - no submission time limits
+    const maxFiles = userLimits.max_files_per_submission;
+    limitsText.textContent = `You can upload up to ${maxFiles} files per submission.`;
+
+    // Only manipulate registerCTA if it exists
+    if (registerCTA) {
+        if (userLimits.is_registered && userLimits.is_approved) {
+            registerCTA.classList.add('hidden');
+        } else if (userLimits.is_registered && !userLimits.is_approved) {
+            limitsText.textContent += ` Account pending approval.`;
+            registerCTA.classList.add('hidden');
+        } else {
+            registerCTA.classList.remove('hidden');
+        }
     }
 }
 
@@ -611,7 +620,7 @@ async function checkAuthStatus() {
 
     try {
         axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-        const response = await axios.get('/api/auth/me');
+        const response = await axios.get('/auth/me');
         currentUser = response.data.user;
         updateAuthUI(currentUser);
     } catch (error) {
@@ -750,7 +759,7 @@ async function handleLogin(event) {
     loginBtn.innerHTML = '<i class="fas fa-spinner animate-spin mr-2"></i>Logging in...';
 
     try {
-        const response = await axios.post('/api/auth/login', {
+        const response = await axios.post('/auth/login', {
             email: email,
             password: password,
             remember: remember
@@ -798,7 +807,7 @@ async function handleRegister(event) {
     registerBtn.innerHTML = '<i class="fas fa-spinner animate-spin mr-2"></i>Registering...';
 
     try {
-        const response = await axios.post('/api/auth/register', {
+        const response = await axios.post('/auth/register', {
             name: name,
             email: email,
             password: password
@@ -830,7 +839,7 @@ async function logout() {
     try {
         const token = localStorage.getItem('auth_token');
         if (token) {
-            await axios.post('/api/auth/logout', {}, {
+            await axios.post('/auth/logout', {}, {
                 headers: {
                     'Authorization': `Bearer ${token}`
                 }
@@ -880,7 +889,7 @@ async function handleChangePassword(event) {
 
     try {
         const token = localStorage.getItem('auth_token');
-        const response = await axios.post('/api/auth/change-password', {
+        const response = await axios.post('/auth/change-password', {
             current_password: currentPassword,
             new_password: newPassword
         }, {
@@ -905,7 +914,7 @@ async function handleChangePassword(event) {
 async function showUsageStats() {
     try {
         const token = localStorage.getItem('auth_token');
-        const response = await axios.get('/api/usage-stats', {
+        const response = await axios.get('/usage-stats', {
             headers: {
                 'Authorization': `Bearer ${token}`
             }
@@ -985,15 +994,6 @@ async function showUsageStats() {
 // Close modal
 function closeModal(element) {
     element.closest('.fixed').remove();
-}
-
-// Logout
-function logout() {
-    localStorage.removeItem('auth_token');
-    delete axios.defaults.headers.common['Authorization'];
-    currentUser = null;
-    updateAuthUI(null);
-    showToast('Logged out successfully', 'success');
 }
 
 // Utility functions
@@ -1223,7 +1223,7 @@ async function checkTokenRenewal() {
 
     try {
         // Refresh token if needed (server will check if within 30 minutes of expiration)
-        const response = await axios.post('/api/auth/refresh-token', {}, {
+        const response = await axios.post('/auth/refresh-token', {}, {
             headers: {
                 'Authorization': `Bearer ${token}`
             }
