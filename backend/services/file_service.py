@@ -4,17 +4,31 @@ import zipfile
 import secrets
 import hashlib
 import io
+import logging
 import threading
 from datetime import datetime, timedelta
 from werkzeug.utils import secure_filename
-from typing import List, Optional, Tuple, BinaryIO
+from typing import List, Optional, Tuple
+from concurrent.futures import ThreadPoolExecutor
+
+logger = logging.getLogger(__name__)
+
 
 class FileService:
+    # LOG-003: Class-level thread pool for cleanup tasks
+    # PERF-002 FIX: Add bounded queue to prevent unbounded task accumulation
+    # Using a BoundedSemaphore to limit concurrent cleanup operations
+    _cleanup_executor = ThreadPoolExecutor(max_workers=5, thread_name_prefix="cleanup_")
+    _cleanup_semaphore = threading.BoundedSemaphore(50)  # Max 50 pending cleanup tasks
+    _cleanup_queue_lock = threading.Lock()
+
     def __init__(self, config=None):
         self.config = config or {}
-        self.upload_folder = self.config.get('UPLOAD_FOLDER') or 'uploads'
-        self.temp_folder = self.config.get('TEMP_FOLDER') or 'temp'
-        self.max_content_length = self.config.get('MAX_CONTENT_LENGTH') or 100 * 1024 * 1024  # 100MB
+        self.upload_folder = self.config.get("UPLOAD_FOLDER") or "uploads"
+        self.temp_folder = self.config.get("TEMP_FOLDER") or "temp"
+        self.max_content_length = (
+            self.config.get("MAX_CONTENT_LENGTH") or 100 * 1024 * 1024
+        )  # 100MB
         self.chunk_size = 64 * 1024  # 64KB chunks for streaming
 
         # Cache for file hashes to detect duplicates
@@ -24,9 +38,11 @@ class FileService:
         # Create folders if they don't exist
         os.makedirs(self.upload_folder, exist_ok=True)
         os.makedirs(self.temp_folder, exist_ok=True)
-        os.makedirs(os.path.join(self.upload_folder, 'downloads'), exist_ok=True)
+        os.makedirs(os.path.join(self.upload_folder, "downloads"), exist_ok=True)
 
-    def save_uploaded_file(self, file, filename: Optional[str] = None) -> Tuple[str, str]:
+    def save_uploaded_file(
+        self, file, filename: Optional[str] = None
+    ) -> Tuple[str, str]:
         """
         Save uploaded file to temporary location with streaming and duplicate detection.
         Returns (filepath, unique_filename).
@@ -47,7 +63,7 @@ class FileService:
         file.seek(0)
 
         # Generate unique filename with timestamp
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S_%f')
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         name, ext = os.path.splitext(secure_filename(filename))
         unique_filename = f"{name}_{timestamp}{ext}"
         filepath = os.path.join(self.temp_folder, unique_filename)
@@ -75,7 +91,7 @@ class FileService:
 
     def _save_file_streaming(self, file, filepath: str):
         """Save file using streaming to handle large files efficiently."""
-        with open(filepath, 'wb') as f:
+        with open(filepath, "wb") as f:
             file.seek(0)  # Reset file pointer
             while True:
                 chunk = file.read(self.chunk_size)
@@ -92,7 +108,12 @@ class FileService:
 
         self._file_hash_cache[file_hash] = filepath
 
-    def create_zip(self, files: List[Tuple[str, str]], zip_name: str = None, session_id: Optional[str] = None) -> str:
+    def create_zip(
+        self,
+        files: List[Tuple[str, str]],
+        zip_name: str = None,
+        session_id: Optional[str] = None,
+    ) -> str:
         """
         Create a ZIP file containing multiple files with optimized compression.
 
@@ -105,13 +126,13 @@ class FileService:
             Full path to created ZIP file
         """
         if zip_name is None:
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             # Add 6 random characters to prevent filename conflicts
             random_suffix = secrets.token_hex(3)  # 6 hex characters
             zip_name = f"renamed_pdfs_{timestamp}_{random_suffix}.zip"
 
         # Save ZIP to session-specific downloads folder
-        download_folder = os.path.join(self.upload_folder, 'downloads')
+        download_folder = os.path.join(self.upload_folder, "downloads")
 
         # Use session_id if provided, otherwise use 'default'
         if session_id:
@@ -132,35 +153,40 @@ class FileService:
         """Create ZIP with optimized settings and streaming."""
         # Calculate total size to determine best approach
         total_size = sum(
-            os.path.getsize(filepath) for filepath, _ in files
+            os.path.getsize(filepath)
+            for filepath, _ in files
             if os.path.exists(filepath)
         )
 
         # Use in-memory ZIP for small files (<10MB total)
         if total_size < 10 * 1024 * 1024:
             zip_buffer = io.BytesIO()
-            with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED, compresslevel=6) as zipf:
-                for filepath, new_filename in files:
-                    if os.path.exists(filepath):
-                        zipf.write(filepath, new_filename)
-
-            # Write buffer to disk
-            with open(zip_path, 'wb') as f:
-                f.write(zip_buffer.getvalue())
-        else:
-            # Use streaming ZIP for larger files
             with zipfile.ZipFile(
-                zip_path,
-                'w',
-                zipfile.ZIP_DEFLATED,
-                compresslevel=6,  # Balanced compression
-                allowZip64=True  # Support for large files
+                zip_buffer, "w", zipfile.ZIP_DEFLATED, compresslevel=6
             ) as zipf:
                 for filepath, new_filename in files:
                     if os.path.exists(filepath):
                         zipf.write(filepath, new_filename)
 
-    def move_to_downloads(self, filepath: str, new_filename: str, session_id: Optional[str] = None) -> str:
+            # Write buffer to disk
+            with open(zip_path, "wb") as f:
+                f.write(zip_buffer.getvalue())
+        else:
+            # Use streaming ZIP for larger files
+            with zipfile.ZipFile(
+                zip_path,
+                "w",
+                zipfile.ZIP_DEFLATED,
+                compresslevel=6,  # Balanced compression
+                allowZip64=True,  # Support for large files
+            ) as zipf:
+                for filepath, new_filename in files:
+                    if os.path.exists(filepath):
+                        zipf.write(filepath, new_filename)
+
+    def move_to_downloads(
+        self, filepath: str, new_filename: str, session_id: Optional[str] = None
+    ) -> str:
         """
         Move processed file to downloads folder with new name.
 
@@ -175,16 +201,16 @@ class FileService:
         Files are organized as: uploads/downloads/{session_id}/{timestamp}_{filename}
         This prevents collisions when multiple users process files with same metadata.
         """
-        download_folder = os.path.join(self.upload_folder, 'downloads')
+        download_folder = os.path.join(self.upload_folder, "downloads")
 
         # Use session_id if provided, otherwise use 'default'
-        session_folder = session_id if session_id else 'default'
+        session_folder = session_id if session_id else "default"
         session_download_folder = os.path.join(download_folder, session_folder)
         os.makedirs(session_download_folder, exist_ok=True)
 
         # Add timestamp to filename to prevent collisions
         # Format: YYYYMMDD_HHMMSS_{original_filename}
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         name, ext = os.path.splitext(new_filename)
         unique_filename = f"{timestamp}_{name}{ext}"
 
@@ -217,7 +243,7 @@ class FileService:
 
     def is_pdf(self, filename: str) -> bool:
         """Check if file is a PDF."""
-        return filename.lower().endswith('.pdf')
+        return filename.lower().endswith(".pdf")
 
     def validate_file(self, file) -> Tuple[bool, str]:
         """Validate uploaded file with streaming and early checks."""
@@ -234,7 +260,10 @@ class FileService:
         file.seek(0)
 
         if size > self.max_content_length:
-            return False, f"File too large. Maximum size is {self.max_content_length / (1024*1024):.1f}MB"
+            return (
+                False,
+                f"File too large. Maximum size is {self.max_content_length / (1024 * 1024):.1f}MB",
+            )
 
         if size == 0:
             return False, "File is empty"
@@ -242,7 +271,7 @@ class FileService:
         # Quick PDF magic number check (only read first 4 bytes)
         magic_bytes = file.read(4)
         file.seek(0)
-        if magic_bytes != b'%PDF':
+        if magic_bytes != b"%PDF":
             return False, "Invalid PDF file format"
 
         return True, "Valid file"
@@ -253,7 +282,7 @@ class FileService:
             if os.path.exists(filepath):
                 os.remove(filepath)
         except Exception as e:
-            print(f"Error removing file {filepath}: {e}")
+            logger.error(f"Error removing file {filepath}: {e}")
 
     def schedule_cleanup(self, filepath: str, delay_minutes: int = 30):
         """
@@ -263,33 +292,67 @@ class FileService:
             filepath: Full path to the file to be cleaned up
             delay_minutes: Minutes to wait before cleanup (default: 30)
 
-        Uses a daemon thread to delete the file after the delay.
-        The thread runs as a daemon so it won't prevent the app from shutting down.
+        LOG-003: Uses a class-level ThreadPoolExecutor to limit concurrent cleanup threads.
+        PERF-002 FIX: Uses BoundedSemaphore to limit pending cleanup tasks.
+        This prevents resource exhaustion from unbounded task accumulation.
         """
-        def cleanup_task():
-            try:
-                # Wait for the specified delay
-                threading.Event().wait(delay_minutes * 60)
-                # Delete the file if it still exists
-                if os.path.exists(filepath):
-                    os.remove(filepath)
-                    print(f"[Cleanup] Removed file: {filepath}")
-            except Exception as e:
-                print(f"[Cleanup] Error removing {filepath}: {e}")
+        # PERF-002 FIX: Acquire semaphore before submitting to limit pending tasks
+        # If 50 tasks are already pending, this will block until a slot is available
+        acquired = self._cleanup_semaphore.acquire(blocking=False)
+        if not acquired:
+            # Queue is full, skip cleanup for this file (will be cleaned by periodic cleanup)
+            logger.warning(
+                f"Cleanup queue full, skipping scheduled cleanup for: {filepath}"
+            )
+            return
 
-        # Start cleanup in a daemon thread (won't block app shutdown)
-        cleanup_thread = threading.Thread(target=cleanup_task, daemon=True)
-        cleanup_thread.start()
+        # Submit cleanup task to the shared thread pool with semaphore release wrapper
+        self._cleanup_executor.submit(
+            self._cleanup_task_with_semaphore, filepath, delay_minutes
+        )
+        logger.debug(f"Scheduled cleanup in {delay_minutes} minutes: {filepath}")
 
-        # Log for debugging
-        print(f"[Cleanup] Scheduled removal in {delay_minutes} minutes: {filepath}")
+    def _cleanup_task_with_semaphore(self, filepath: str, delay_minutes: int):
+        """
+        Internal cleanup task that releases semaphore after completion.
 
-    def process_files_batch(self, files: List, paths: List = None, preserve_structure: bool = False) -> Tuple[List, List]:
+        Args:
+            filepath: Full path to the file to be cleaned up
+            delay_minutes: Minutes to wait before cleanup
+        """
+        try:
+            self._cleanup_task(filepath, delay_minutes)
+        finally:
+            # Always release semaphore, even if cleanup fails
+            self._cleanup_semaphore.release()
+
+    def _cleanup_task(self, filepath: str, delay_minutes: int):
+        """
+        Internal cleanup task executed by the thread pool.
+
+        Args:
+            filepath: Full path to the file to be cleaned up
+            delay_minutes: Minutes to wait before cleanup
+        """
+        import time
+
+        try:
+            # Wait for the specified delay
+            time.sleep(delay_minutes * 60)
+            # Delete the file if it still exists
+            if os.path.exists(filepath):
+                os.remove(filepath)
+                logger.debug(f"Removed file: {filepath}")
+        except Exception as e:
+            logger.error(f"Error removing {filepath}: {e}")
+
+    def process_files_batch(
+        self, files: List, paths: List = None, preserve_structure: bool = False
+    ) -> Tuple[List, List]:
         """
         Process multiple files in batch for better performance.
         Returns (successful_files, errors).
         """
-        from flask import request
 
         successful_files = []
         errors = []
@@ -317,12 +380,14 @@ class FileService:
                 # Save file with streaming
                 filepath, unique_filename = self.save_uploaded_file(file, original_path)
 
-                successful_files.append({
-                    'original_name': original_path,
-                    'original_filename': file.filename,
-                    'filepath': filepath,
-                    'unique_filename': unique_filename
-                })
+                successful_files.append(
+                    {
+                        "original_name": original_path,
+                        "original_filename": file.filename,
+                        "filepath": filepath,
+                        "unique_filename": unique_filename,
+                    }
+                )
 
             except Exception as e:
                 original_path = file.filename if not original_path else original_path

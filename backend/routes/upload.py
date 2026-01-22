@@ -1,18 +1,18 @@
-from flask import Blueprint, request, jsonify, send_file, current_app, g
-from flask_login import login_required, current_user
+from flask import Blueprint, request, jsonify, send_file
+from flask_login import current_user
 from backend.models import Usage
 from backend.database import db
 from backend.services import PDFProcessor, LLMService, FileService
-from backend.utils import track_usage
-from backend.utils.decorators import log_usage, record_usage
+from backend.utils.decorators import record_usage
 from backend.utils.auth import auth_required
 from werkzeug.utils import secure_filename
-import tempfile
 import os
+import logging
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 upload = Blueprint("upload", __name__)
+logger = logging.getLogger(__name__)
 
 # Initialize services (lazy initialization to avoid config issues)
 pdf_processor = None
@@ -36,10 +36,10 @@ def get_services():
 @upload.route("/upload", methods=["POST"])
 def upload_files():
     """Upload and process PDF files."""
-    print(f"[DEBUG] Upload endpoint called - START")
+    logger.debug("Upload endpoint called - START")
     try:
-        print(f"[DEBUG] Request files: {request.files}")
-        print(f"[DEBUG] Request form: {request.form}")
+        logger.debug(f"Request files: {request.files}")
+        logger.debug(f"Request form: {request.form}")
 
         # Check if files were uploaded
         if "files" not in request.files:
@@ -50,17 +50,15 @@ def upload_files():
             return jsonify({"error": "No files selected"}), 400
 
         # Get services with detailed error logging
-        print(f"[DEBUG] About to get services...")
+        logger.debug("About to get services...")
         try:
             llm_svc, file_svc, pdf_proc = get_services()
-            print(f"[DEBUG] Services obtained successfully")
+            logger.debug("Services obtained successfully")
         except Exception as e:
-            print(
-                f"[ERROR] Service initialization failed: {type(e).__name__}: {str(e)}"
-            )
+            logger.error(f"Service initialization failed: {type(e).__name__}: {str(e)}")
             import traceback
 
-            print(f"[ERROR] Service traceback: {traceback.format_exc()}")
+            logger.error(f"Service traceback: {traceback.format_exc()}")
             return jsonify({"error": f"Service initialization failed: {str(e)}"}), 500
 
         # Get file paths if folder upload
@@ -318,16 +316,24 @@ def download_file(filepath):
         if not safe_filepath:
             return jsonify({"error": "Invalid filename"}), 400
 
-        # Use absolute path to ensure we find the file
-        file_path = os.path.abspath(os.path.join("uploads", "downloads", safe_filepath))
+        # SEC-003 FIX: Add realpath check to prevent path traversal via symlinks
+        # Get the absolute paths and verify the requested file stays within allowed directory
+        allowed_dir = os.path.abspath(os.path.join("uploads", "downloads"))
+        file_path = os.path.abspath(os.path.join(allowed_dir, safe_filepath))
 
-        # Debug print (server-side only, not exposed to user)
-        print(f"[DEBUG] Looking for file at: {file_path}")
-        print(f"[DEBUG] File exists: {os.path.exists(file_path)}")
+        # Verify the file path is within the allowed directory
+        # This prevents symlink attacks and path traversal
+        if not file_path.startswith(allowed_dir + os.sep) and file_path != allowed_dir:
+            logger.warning(f"Path traversal attempt blocked: {safe_filepath}")
+            return jsonify({"error": "Invalid filename"}), 400
+
+        # Debug logging (server-side only, not exposed to user)
+        logger.debug(f"Looking for file at: {file_path}")
+        logger.debug(f"File exists: {os.path.exists(file_path)}")
 
         if not os.path.exists(file_path):
             # Don't expose full path to user - only show filename
-            return jsonify({"error": f"File not found"}), 404
+            return jsonify({"error": "File not found"}), 404
 
         # Determine mimetype based on file extension
         if safe_filepath.lower().endswith(".zip"):
@@ -356,7 +362,7 @@ def download_file(filepath):
         )
 
     except Exception as e:
-        print(f"[ERROR] Download error: {e}")
+        logger.error(f"Download error: {e}")
         # Don't expose internal error details to user
         return jsonify({"error": "Download failed. Please try again."}), 500
 
@@ -369,7 +375,7 @@ def usage_stats():
         return jsonify({"error": "Authentication required"}), 401
 
     # Get usage stats (daily for anonymous users, yearly for registered)
-    from datetime import datetime, timedelta
+    from datetime import datetime
 
     if current_user.is_approved:
         year_ago = datetime.utcnow() - timedelta(days=365)

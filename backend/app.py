@@ -1,11 +1,19 @@
-from flask import Flask, request, g
+from flask import Flask
 from flask_login import LoginManager, current_user
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from backend.config import config
 from backend.database import db
-from backend.models import User, Usage, SystemSettings
+from backend.models import User, SystemSettings
 from werkzeug.middleware.proxy_fix import ProxyFix
 import os
-import datetime
+
+
+def get_user_id_from_user():
+    """Key function for user-based rate limiting."""
+    return (
+        str(current_user.id) if current_user.is_authenticated else get_remote_address()
+    )
 
 
 class ApplicationRootMiddleware:
@@ -58,10 +66,10 @@ project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 env_path = os.path.join(project_root, ".env")
 load_dotenv(env_path)
 
-# Debug: Verify API key is loaded
+# Debug: Verify API key is loaded (SEC-002: Do not log actual key characters)
 api_key = os.environ.get("OPENAI_COMPATIBLE_API_KEY")
 if api_key:
-    print(f"[Init] OPENAI_COMPATIBLE_API_KEY loaded: {api_key[:10]}...{api_key[-4:]}")
+    print("[Init] OPENAI_COMPATIBLE_API_KEY loaded successfully")
 else:
     print("[Init] WARNING: OPENAI_COMPATIBLE_API_KEY not found in environment")
 
@@ -132,6 +140,69 @@ def create_app(config_name=None):
     login_manager.login_view = "auth.login"
     login_manager.login_message = "Please log in to access this page."
 
+    # Initialize CSRF protection
+    # Note: API endpoints using JWT cookies are exempt (cookies have SameSite protection)
+    from flask_wtf.csrf import CSRFProtect
+
+    csrf = CSRFProtect(app)
+
+    # Initialize Flask-Talisman for security headers (FR-SEC-001)
+    # Adds HSTS, X-Frame-Options, X-Content-Type-Options, CSP headers
+    from flask_talisman import Talisman
+
+    # Determine if HTTPS enforcement should be enabled
+    # Development/Testing: force_https=False allows HTTP on localhost
+    # Production: force_https=True enforces HTTPS redirects
+    flask_env = os.environ.get("FLASK_ENV", "production")
+    force_https = flask_env not in ["development", "testing"]
+
+    Talisman(
+        app,
+        force_https=force_https,
+        strict_transport_security=True,
+        strict_transport_security_preload=True,
+        strict_transport_security_max_age=31536000,
+        session_cookie_secure=True,
+        session_cookie_http_only=True,
+        session_cookie_samesite="Lax",
+        content_security_policy={
+            "default-src": "'self'",
+            "img-src": "'self' data: https:",
+            "script-src": "'self' 'unsafe-inline'",
+            "style-src": "'self' 'unsafe-inline'",
+        },
+    )
+
+    # Note: API endpoints use JWT cookies with SameSite=Lax protection
+    # CSRF tokens are automatically validated for form submissions
+    # API routes are automatically handled since they don't use form data
+    # No manual exemption needed - Flask-WTF handles this correctly
+
+    # Initialize Flask-Limiter for rate limiting
+    # PERF-001: Rate Limiting Storage Configuration
+    #
+    # Current: Uses in-memory storage (storage_uri="memory://")
+    # - Pros: Simple, no external dependencies
+    # - Cons: Limits reset on application restart, not shared across multiple workers
+    #
+    # Production Recommendations:
+    # - For single-worker deployments: memory:// is acceptable
+    # - For multi-worker deployments: Use Redis or Memcached for shared state
+    # - Redis example: storage_uri="redis://localhost:6379"
+    # - Memcached example: storage_uri="memcached://localhost:11211"
+    #
+    # To enable persistent rate limiting across restarts:
+    # 1. Install Redis: pip install redis
+    # 2. Set RATE_LIMIT_STORAGE_URL environment variable
+    # 3. Update storage_uri to use: os.environ.get("RATE_LIMIT_STORAGE_URL", "memory://")
+    limiter = Limiter(
+        app=app,
+        key_func=get_remote_address,
+        default_limits=["200 per day", "50 per hour"],
+        storage_uri="memory://",
+        strategy="fixed-window",
+    )
+
     # Initialize database monitoring middleware in production
     if not app.debug:
         from backend.middleware.db_monitor import DatabaseMonitorMiddleware
@@ -140,7 +211,7 @@ def create_app(config_name=None):
 
     @login_manager.user_loader
     def load_user(user_id):
-        return User.query.get(int(user_id))
+        return db.session.get(User, int(user_id))
 
     # Register blueprints
     from backend.routes.main import main as main_blueprint

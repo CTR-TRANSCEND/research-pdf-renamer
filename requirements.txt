@@ -1,14 +1,25 @@
-Flask==2.3.3
-Flask-SQLAlchemy==3.0.5
+# DEP-001 FIX: Update Flask to 2.3.8+ for CVE-2024-3992 fix
+Flask==3.0.3
+Flask-SQLAlchemy==3.1.1
 Flask-Login==0.6.3
-Flask-WTF==1.1.1
-WTForms==3.0.1
-Werkzeug==2.3.7
+Flask-WTF==1.2.2
+WTForms==3.1.3
+# DEP-001 FIX: Update Werkzeug to 3.1.3+ for security fixes
+Werkzeug==3.1.3
 PyPDF2==3.0.1
 pdfplumber==0.9.0
-openai==1.3.5
+openai==1.58.1
 python-dotenv==1.0.0
-bcrypt==4.0.1
-PyJWT==2.8.0
-email-validator==2.0.0
-gunicorn==21.2.0
+bcrypt==4.2.1
+PyJWT==2.9.0
+email-validator==2.1.0
+# DEP-001 FIX: Add email-validator for proper email validation
+gunicorn==23.0.0
+Flask-Limiter==3.8.0
+cryptography==43.0.3
+pytest-cov==6.0.0
+pytest-mock==3.14.0
+# DEP-001 FIX: Add pydantic for schema validation
+pydantic==2.10.4
+# DEP-001 FIX: Add flask-talisman for security headers
+flask-talisman==1.1.0
