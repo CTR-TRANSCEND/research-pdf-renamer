@@ -272,6 +272,20 @@
                         <p id="server-url-help" class="text-sm text-gray-500 mt-1">Enter your server URL and click to fetch available models</p>
                     </div>
 
+                    <!-- Context Window (for LM Studio only) -->
+                    <div id="context-window-container" class="hidden">
+                        <label for="context-window" class="block text-sm font-medium text-gray-700 mb-2">Token Context Window</label>
+                        <div class="flex gap-2">
+                            <input type="number" id="context-window" placeholder="4096" min="1024" max="128000" step="1024"
+                                   class="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-indigo-500">
+                            <button type="button" id="save-context-window"
+                                    class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition font-medium whitespace-nowrap">
+                                <i class="fas fa-save mr-1"></i> Save
+                            </button>
+                        </div>
+                        <p class="text-sm text-gray-500 mt-1">Maximum tokens the model can process (default: 4096, typical range: 2048-128000)</p>
+                    </div>
+
                     <!-- Optional API Key (for Ollama and OpenAI-Compatible providers) -->
                     <div id="server-api-key-container">
                         <label id="server-api-key-label" class="block text-sm font-medium text-gray-700 mb-2">API Key (Optional)</label>
@@ -513,16 +527,7 @@
 
     // Initialize immediately (script is at end of body, so DOM is ready)
     (async function initializeAdmin() {
-        // Check if user is admin
-        const token = localStorage.getItem('auth_token');
-        if (!token) {
-            window.location.href = window.location.pathname.replace(/\/admin\/?$/, '') || '/';
-            return;
-        }
-
-        // Set up axios authorization header
-        axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-
+        // JWT is now stored in HttpOnly cookie, sent automatically with requests
         // Use the global API_BASE_URL set by the server (includes APPLICATION_ROOT)
         if (window.API_BASE_URL) {
             axios.defaults.baseURL = window.API_BASE_URL;
@@ -652,12 +657,8 @@
     // Load dashboard data
     async function loadDashboard() {
         try {
-            const token = localStorage.getItem('auth_token');
-            console.log('[Admin] Loading dashboard with token:', token ? token.substring(0, 20) + '...' : 'none');
-
-            const statsResponse = await axios.get('admin/stats', {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
+            // JWT cookie is sent automatically
+            const statsResponse = await axios.get('admin/stats');
 
             console.log('[Admin] Stats response:', statsResponse.data);
             const stats = statsResponse.data;
@@ -730,7 +731,7 @@
     // Load users
     async function loadUsers(page = 1) {
         try {
-            const token = localStorage.getItem('auth_token');
+            // JWT cookie is sent automatically
             const search = document.getElementById('user-search').value;
             const status = document.getElementById('user-filter').value;
 
@@ -738,9 +739,7 @@
             if (search) url += `&search=${search}`;
             if (status) url += `&status=${status}`;
 
-            const response = await axios.get(url, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
+            const response = await axios.get(url);
 
             const users = response.data.users;
             const pagination = response.data;
@@ -807,9 +806,8 @@
     // Load pending users
     async function loadPendingUsers() {
         try {
-            const token = localStorage.getItem('auth_token');
+            // JWT cookie is sent automatically
             const response = await axios.get('admin/pending', {
-                headers: { 'Authorization': `Bearer ${token}` }
             });
 
             const users = response.data.users;
@@ -851,9 +849,8 @@
 
     async function loadLLMSettings() {
         try {
-            const token = localStorage.getItem('auth_token');
+            // JWT cookie is sent automatically
             const response = await axios.get('admin/llm-settings', {
-                headers: { 'Authorization': `Bearer ${token}` }
             });
 
             llmSettingsData = response.data;
@@ -951,6 +948,34 @@
                     const serverUrlLabel = document.getElementById('server-url-label');
                     const serverUrlHelp = document.getElementById('server-url-help');
                     const ollamaUrlInput = document.getElementById('ollama-url');
+                    const contextWindowContainer = document.getElementById('context-window-container');
+                    const serverApiKeyContainer = document.getElementById('server-api-key-container');
+
+                    // Handle context window and API key visibility for LM Studio
+                    if (selectedProvider === 'lm-studio') {
+                        // Show context window for LM Studio
+                        if (contextWindowContainer) {
+                            contextWindowContainer.classList.remove('hidden');
+                            // Load current context window value
+                            const contextWindowInput = document.getElementById('context-window');
+                            if (contextWindowInput && settings.available_providers['lm-studio']?.context_window) {
+                                contextWindowInput.value = settings.available_providers['lm-studio'].context_window;
+                            }
+                        }
+                        // Hide API key container for LM Studio (no API key needed)
+                        if (serverApiKeyContainer) {
+                            serverApiKeyContainer.classList.add('hidden');
+                        }
+                    } else {
+                        // Hide context window for other providers
+                        if (contextWindowContainer) {
+                            contextWindowContainer.classList.add('hidden');
+                        }
+                        // Show API key container for Ollama and OpenAI-Compatible
+                        if (serverApiKeyContainer) {
+                            serverApiKeyContainer.classList.remove('hidden');
+                        }
+                    }
 
                     if (selectedProvider === 'ollama') {
                         if (serverUrlLabel) serverUrlLabel.textContent = 'Ollama Server URL';
@@ -960,11 +985,16 @@
                         if (serverUrlLabel) serverUrlLabel.textContent = 'Server URL';
                         if (serverUrlHelp) serverUrlHelp.textContent = 'Enter your OpenAI-compatible server URL and click to fetch available models';
                         if (ollamaUrlInput) ollamaUrlInput.placeholder = 'http://localhost:8000';
+                    } else if (selectedProvider === 'lm-studio') {
+                        if (serverUrlLabel) serverUrlLabel.textContent = 'LM Studio Server URL';
+                        if (serverUrlHelp) serverUrlHelp.textContent = 'Enter your LM Studio server URL and click to fetch available models';
+                        if (ollamaUrlInput) ollamaUrlInput.placeholder = 'http://10.226.96.211:1234/v1';
                     }
 
-                    // Set server URL if available
-                    if (settings.ollama_url) {
-                        ollamaUrlInput.value = settings.ollama_url;
+                    // Set server URL from provider-specific settings
+                    const providerInfo = settings.available_providers[selectedProvider];
+                    if (providerInfo && providerInfo.url) {
+                        ollamaUrlInput.value = providerInfo.url;
                     }
 
                     // Disable model dropdown until models are fetched
@@ -974,12 +1004,13 @@
                     // Update help text based on provider type
                     if (selectedProvider === 'ollama') {
                         modelHelpText.textContent = 'Enter your Ollama URL and click "Fetch Models" to see available models';
-                    } else if (selectedProvider === 'openai-compatible') {
+                    } else if (selectedProvider === 'openai-compatible' || selectedProvider === 'lm-studio') {
                         modelHelpText.textContent = 'Enter your server URL and click "Fetch Models" to see available models';
                     }
 
-                    // Auto-fetch models if URL is set
-                    if (settings.ollama_url && (settings.current_provider === 'ollama' || settings.current_provider === 'openai-compatible')) {
+                    // Auto-fetch models if provider-specific URL is set
+                    const providerUrl = providerInfo ? providerInfo.url : null;
+                    if (providerUrl && (selectedProvider === 'ollama' || selectedProvider === 'openai-compatible' || selectedProvider === 'lm-studio')) {
                         // Auto-fetch on load for Ollama and OpenAI-Compatible
                         await fetchOllamaModels();
                     }
@@ -1021,14 +1052,14 @@
         fetchBtn.innerHTML = '<i class="fas fa-spinner animate-spin mr-1"></i> Fetching...';
 
         try {
-            const token = localStorage.getItem('auth_token');
+            // JWT cookie is sent automatically
             const response = await axios.post('admin/test-ollama-connection',
                 {
                     ollama_url: ollamaUrl,
                     api_key: apiKey,
                     provider: provider
                 },
-                { headers: { 'Authorization': `Bearer ${token}` } }
+                { }
             );
 
             if (response.data.success) {
@@ -1038,10 +1069,25 @@
                 const loadedModels = response.data.loaded_models || [];
                 const loadedCount = response.data.loaded_count || 0;
                 const allModels = response.data.models || [];
+                const currentProvider = document.getElementById('llm-provider').value;
+
+                // Update message based on provider
+                let successMessage;
+                if (currentProvider === 'lm-studio') {
+                    const lmStudioData = response.data.available_providers['lm-studio'];
+                    const jitMode = lmStudioData.jit_mode !== false;
+                    if (jitMode) {
+                        successMessage = `Found ${allModels.length} models (JIT loading enabled)`;
+                    } else {
+                        successMessage = `Found ${loadedModels.length} loaded models (${allModels.length} total)`;
+                    }
+                } else {
+                    successMessage = `Found ${loadedCount} loaded models (${allModels.length} total on server)`;
+                }
 
                 document.getElementById('ollama-model-count').textContent =
-                    `(${loadedCount} loaded, ${allModels.length} total available)`;
-                showToast(`Found ${loadedCount} loaded models (${allModels.length} total on server)`, 'success');
+                    `(${loadedModels.length} loaded, ${allModels.length} total available)`;
+                showToast(successMessage, 'success');
 
                 // Show and populate the available models list
                 const modelsContainer = document.getElementById('available-models-container');
@@ -1049,52 +1095,100 @@
                 const modelCountBadge = document.getElementById('model-count-badge');
 
                 modelsContainer.classList.remove('hidden');
-                modelCountBadge.textContent = `${loadedCount} loaded / ${allModels.length} total`;
+                modelCountBadge.textContent = `${loadedModels.length} loaded / ${allModels.length} total`;
 
-                // Clear and populate the model list (show all models)
+                // Clear and populate the model list (show all models with status)
                 modelsList.innerHTML = '';
                 allModels.forEach((model, index) => {
                     const isLoaded = loadedModels.includes(model);
                     const modelItem = document.createElement('div');
                     modelItem.className = 'flex items-center p-2 bg-white border border-gray-200 rounded-lg hover:bg-indigo-50 transition';
+
+                    // For LM Studio, show "Ready" for loaded models instead of "Loaded"
+                    const statusText = currentProvider === 'lm-studio' ? 'Ready' : 'Loaded';
+                    const statusIcon = currentProvider === 'lm-studio' ? 'fa-check-circle' : 'fa-cube';
+                    const colorClass = isLoaded ? 'text-green-600' : 'text-gray-400';
+
                     modelItem.innerHTML = `
                         <div class="flex items-center flex-1">
-                            <i class="fas fa-cube ${isLoaded ? 'text-green-600' : 'text-gray-400'} mr-2"></i>
+                            <i class="fas ${statusIcon} ${colorClass} mr-2"></i>
                             <span class="text-sm font-medium ${isLoaded ? 'text-gray-900' : 'text-gray-600'}">${model}</span>
                         </div>
                         <span class="text-xs px-2 py-1 ${isLoaded ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'} rounded-full">
-                            ${isLoaded ? 'Loaded' : 'Not loaded'}
+                            ${isLoaded ? statusText : 'Not loaded'}
                         </span>
                     `;
                     modelsList.appendChild(modelItem);
                 });
 
-                // Enable and populate model dropdown with ONLY loaded models
-                modelSelect.disabled = loadedCount === 0;  // Disable if no models loaded
+                // Enable and populate model dropdown
+                const currentProvider = document.getElementById('llm-provider').value;
                 const currentModel = modelSelect.value;
 
-                if (loadedCount === 0) {
-                    // No models loaded - show message in dropdown
-                    modelSelect.innerHTML = '<option value="">No models loaded - load one first</option>';
-                    modelHelpText.textContent = 'Load a model on your server first, then click "Fetch Models" again';
-                } else {
-                    // Show only loaded models in dropdown
-                    modelSelect.innerHTML = '<option value="">Select Model</option>';
-                    loadedModels.forEach(model => {
-                        const option = document.createElement('option');
-                        option.value = model;
-                        option.textContent = model;
-                        if (model === currentModel || model === llmSettingsData?.current_model) option.selected = true;
-                        modelSelect.appendChild(option);
-                    });
-                }
+                if (currentProvider === 'lm-studio') {
+                    // LM Studio: Handle JIT loading state
+                    const lmStudioData = response.data.available_providers['lm-studio'];
+                    const allModels = lmStudioData.models || [];
+                    const loadedModels = lmStudioData.loaded_models || [];
+                    const jitMode = lmStudioData.jit_mode !== false;  // Default to JIT mode
 
-                // Update help text based on current provider
-                const currentProvider = document.getElementById('llm-provider').value;
-                if (currentProvider === 'openai-compatible') {
-                    modelHelpText.textContent = `Select your server model (${response.data.model_count} available)`;
+                    if (jitMode) {
+                        // JIT Mode ON: All models are immediately usable
+                        modelSelect.disabled = false;
+                        modelSelect.innerHTML = '<option value="">Select Model</option>';
+                        allModels.forEach(model => {
+                            const option = document.createElement('option');
+                            option.value = model;
+                            option.textContent = model;
+                            if (model === currentModel || model === llmSettingsData?.current_model) option.selected = true;
+                            modelSelect.appendChild(option);
+                        });
+                        modelHelpText.textContent = `Select your LM Studio model (${allModels.length} available, JIT loading enabled)`;
+                    } else {
+                        // JIT Mode OFF: Only show loaded models
+                        modelSelect.disabled = loadedModels.length === 0;
+
+                        if (loadedModels.length === 0) {
+                            modelSelect.innerHTML = '<option value="">No models loaded - load one in LM Studio first</option>';
+                            modelHelpText.textContent = 'JIT loading appears to be OFF. Load a model in LM Studio first, then click "Fetch Models" again.';
+                        } else {
+                            modelSelect.innerHTML = '<option value="">Select Model</option>';
+                            loadedModels.forEach(model => {
+                                const option = document.createElement('option');
+                                option.value = model;
+                                option.textContent = model;
+                                if (model === currentModel || model === llmSettingsData?.current_model) option.selected = true;
+                                modelSelect.appendChild(option);
+                            });
+                            modelHelpText.textContent = `Select your LM Studio model (${loadedModels.length} loaded, ${allModels.length} total)`;
+                        }
+                    }
                 } else {
-                    modelHelpText.textContent = `Select your Ollama model (${response.data.model_count} available)`;
+                    // Ollama: Only show loaded models in dropdown
+                    modelSelect.disabled = loadedCount === 0;  // Disable if no models loaded
+
+                    if (loadedCount === 0) {
+                        // No models loaded - show message in dropdown
+                        modelSelect.innerHTML = '<option value="">No models loaded - load one first</option>';
+                        modelHelpText.textContent = 'Load a model on your server first, then click "Fetch Models" again';
+                    } else {
+                        // Show only loaded models in dropdown
+                        modelSelect.innerHTML = '<option value="">Select Model</option>';
+                        loadedModels.forEach(model => {
+                            const option = document.createElement('option');
+                            option.value = model;
+                            option.textContent = model;
+                            if (model === currentModel || model === llmSettingsData?.current_model) option.selected = true;
+                            modelSelect.appendChild(option);
+                        });
+                    }
+
+                    // Update help text based on current provider
+                    if (currentProvider === 'openai-compatible') {
+                        modelHelpText.textContent = `Select your server model (${response.data.model_count} available)`;
+                    } else {
+                        modelHelpText.textContent = `Select your Ollama model (${loadedCount} loaded)`;
+                    }
                 }
             }
 
@@ -1123,7 +1217,7 @@
         const dbKeyWarning = document.getElementById('db-key-warning');
 
         // Check if API key is optional for this provider
-        const isOptionalKey = ['ollama', 'openai-compatible'].includes(provider);
+        const isOptionalKey = ['ollama', 'openai-compatible', 'lm-studio'].includes(provider);
 
         if (!apiKeys || !apiKeys[provider] || !apiKeys[provider].is_set) {
             // API key is not set
@@ -1202,9 +1296,8 @@
     // Load system status
     async function loadSystemStatus() {
         try {
-            const token = localStorage.getItem('auth_token');
+            // JWT cookie is sent automatically
             const response = await axios.get('admin/system-status', {
-                headers: { 'Authorization': `Bearer ${token}` }
             });
 
             const status = response.data;
@@ -1223,6 +1316,7 @@
                 'openai': 'OpenAI',
                 'ollama': 'Ollama',
                 'openai-compatible': 'OpenAI-Compatible',
+                'lm-studio': 'LM Studio',
                 'unknown': 'Unknown'
             };
 
@@ -1310,9 +1404,8 @@
         if (!confirm('Are you sure you want to approve this user?')) return;
 
         try {
-            const token = localStorage.getItem('auth_token');
-            await axios.post(`admin/approve/${userId}`, {}, {
-                headers: { 'Authorization': `Bearer ${token}` }
+            // JWT cookie is sent automatically
+    await axios.post(`admin/approve/${userId}`, {}, {
             });
 
             showToast('User approved successfully', 'success');
@@ -1331,9 +1424,8 @@
         if (!confirm('Are you sure you want to reject this user? This action cannot be undone.')) return;
 
         try {
-            const token = localStorage.getItem('auth_token');
-            await axios.delete(`admin/reject/${userId}`, {
-                headers: { 'Authorization': `Bearer ${token}` }
+            // JWT cookie is sent automatically
+    await axios.delete(`admin/reject/${userId}`, {
             });
 
             showToast('User rejected and deleted', 'success');
@@ -1351,9 +1443,8 @@
         if (!confirm('Are you sure you want to deactivate this user? They will not be able to access the system until reactivated.')) return;
 
         try {
-            const token = localStorage.getItem('auth_token');
-            await axios.post(`admin/deactivate/${userId}`, {}, {
-                headers: { 'Authorization': `Bearer ${token}` }
+            // JWT cookie is sent automatically
+    await axios.post(`admin/deactivate/${userId}`, {}, {
             });
 
             showToast('User deactivated successfully', 'success');
@@ -1371,9 +1462,8 @@
         if (!confirm('Are you sure you want to activate this user? They will regain access to the system.')) return;
 
         try {
-            const token = localStorage.getItem('auth_token');
-            await axios.post(`admin/activate/${userId}`, {}, {
-                headers: { 'Authorization': `Bearer ${token}` }
+            // JWT cookie is sent automatically
+    await axios.post(`admin/activate/${userId}`, {}, {
             });
 
             showToast('User activated successfully', 'success');
@@ -1391,9 +1481,8 @@
         if (!confirm('Are you sure you want to delete this user? This action cannot be undone.')) return;
 
         try {
-            const token = localStorage.getItem('auth_token');
-            await axios.delete(`admin/users/${userId}`, {
-                headers: { 'Authorization': `Bearer ${token}` }
+            // JWT cookie is sent automatically
+    await axios.delete(`admin/users/${userId}`, {
             });
 
             showToast('User deleted successfully', 'success');
@@ -1416,15 +1505,14 @@
         saveBtn.innerHTML = '<i class="fas fa-spinner animate-spin mr-2"></i>Saving...';
 
         try {
-            const token = localStorage.getItem('auth_token');
-            const data = {
+            // JWT cookie is sent automatically
+    const data = {
                 provider: document.getElementById('llm-provider').value,
                 model: document.getElementById('llm-model').value,
                 ollama_url: document.getElementById('ollama-url').value
             };
 
             const response = await axios.post('admin/llm-settings', data, {
-                headers: { 'Authorization': `Bearer ${token}` }
             });
 
             showToast(response.data.message, 'success');
@@ -1461,10 +1549,10 @@
         saveBtn.innerHTML = '<i class="fas fa-spinner animate-spin mr-1"></i> Saving...';
 
         try {
-            const token = localStorage.getItem('auth_token');
+            // JWT cookie is sent automatically
             const response = await axios.post('admin/save-api-key',
                 { provider: provider, api_key: apiKey },
-                { headers: { 'Authorization': `Bearer ${token}` } }
+                { }
             );
 
             showToast(response.data.message, 'success');
@@ -1513,10 +1601,10 @@
         saveBtn.innerHTML = '<i class="fas fa-spinner animate-spin mr-1"></i> Saving...';
 
         try {
-            const token = localStorage.getItem('auth_token');
+            // JWT cookie is sent automatically
             const response = await axios.post('admin/save-api-key',
                 { provider: provider, api_key: apiKey },
-                { headers: { 'Authorization': `Bearer ${token}` } }
+                { }
             );
 
             showToast(response.data.message, 'success');
@@ -1536,6 +1624,45 @@
         } catch (error) {
             const errorMsg = error.response?.data?.error || 'Failed to save API key';
             showToast(errorMsg, 'error');
+        } finally {
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = originalText;
+        }
+    });
+
+    // Save context window (for LM Studio)
+    document.getElementById('save-context-window').addEventListener('click', async () => {
+        const contextWindowInput = document.getElementById('context-window');
+        const contextWindow = contextWindowInput.value;
+        const provider = document.getElementById('llm-provider').value || 'openai';
+        const saveBtn = document.getElementById('save-context-window');
+        const originalText = saveBtn.innerHTML;
+
+        // Validate context window value
+        if (!contextWindow || parseInt(contextWindow) < 1024) {
+            showToast('Context window must be at least 1024 tokens', 'error');
+            return;
+        }
+
+        saveBtn.disabled = true;
+        saveBtn.innerHTML = '<i class="fas fa-spinner animate-spin mr-1"></i> Saving...';
+
+        try {
+            // JWT cookie is sent automatically
+            const response = await axios.post('admin/llm-settings',
+                {
+                    provider: provider,
+                    model: document.getElementById('llm-model').value,
+                    ollama_url: document.getElementById('ollama-url').value,
+                    context_window: contextWindow
+                },
+                { }
+            );
+
+            showToast('Context window saved successfully', 'success');
+        } catch (error) {
+            console.error('Error saving context window:', error);
+            showToast(error.response?.data?.error || 'Failed to save context window', 'error');
         } finally {
             saveBtn.disabled = false;
             saveBtn.innerHTML = originalText;
@@ -1587,16 +1714,9 @@
 
     async function loadAdminUsageStats() {
         try {
-            const token = localStorage.getItem('auth_token');
-            if (!token) {
-                document.getElementById('usage-stats-content').innerHTML = '<p class="text-center text-gray-500">Authentication required</p>';
-                return;
-            }
+            
 
             const response = await axios.get('usage-stats', {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
             });
             const stats = response.data;
 
@@ -1659,8 +1779,8 @@
         saveBtn.innerHTML = '<i class="fas fa-spinner animate-spin mr-2"></i>Changing...';
 
         try {
-            const token = localStorage.getItem('auth_token');
-            const currentPassword = document.getElementById('current-password').value;
+            // JWT cookie is sent automatically
+    const currentPassword = document.getElementById('current-password').value;
             const newPassword = document.getElementById('new-password').value;
             const confirmPassword = document.getElementById('confirm-new-password').value;
 
@@ -1673,9 +1793,6 @@
                 current_password: currentPassword,
                 new_password: newPassword
             }, {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
             });
 
             showToast(response.data.message, 'success');
@@ -1720,15 +1837,12 @@
         saveBtn.innerHTML = '<i class="fas fa-spinner animate-spin mr-2"></i>Updating...';
 
         try {
-            const token = localStorage.getItem('auth_token');
-            const maxFiles = document.getElementById('max-files-input').value;
+            // JWT cookie is sent automatically
+    const maxFiles = document.getElementById('max-files-input').value;
 
             const response = await axios.put(`admin/users/${editingUserId}/limits`, {
                 max_files_per_session: parseInt(maxFiles)
             }, {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
             });
 
             showToast(response.data.message, 'success');

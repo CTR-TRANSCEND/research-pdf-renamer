@@ -113,6 +113,13 @@ Command usage examples:
 
 ## Agent Invocation Patterns (CLAUDE.md Compliance)
 
+[HARD] AGENT DELEGATION MANDATE:
+
+- ALL synchronization tasks MUST be delegated to specialized agents (manager-docs, manager-quality, manager-git)
+- NEVER execute documentation sync directly, even after auto compact
+- WHY: Specialized agents have domain expertise for Living Document patterns, TRUST 5 validation, and Git operations
+- This rule applies regardless of session state or context recovery
+
 This command uses agent execution patterns defined in CLAUDE.md (lines 96-120).
 
 ### Sequential Phase-Based Chaining PASS
@@ -787,6 +794,10 @@ WHY: Complete validation prevents synchronization of broken states. Detailed res
 ---
 
 ### Step 1.4: Invoke Doc-Syncer for Synchronization Plan
+
+[SOFT] Apply --ultrathink keyword for synchronization strategy analysis
+WHY: Sync planning requires understanding of project state, changed files, and appropriate mode selection
+IMPACT: Sequential thinking ensures optimal synchronization approach and quality validation
 
 Your task: Call manager-docs to analyze Git changes and create synchronization strategy.
 

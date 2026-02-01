@@ -3,11 +3,12 @@ name: expert-frontend
 description: |
   Frontend development and UI/UX design specialist. Use PROACTIVELY for React, Vue, Next.js, component design, state management, accessibility, WCAG compliance, and design systems.
   MUST INVOKE when ANY of these keywords appear in user request:
+  --ultrathink flag: Activate Sequential Thinking MCP for deep analysis of component architecture, state management patterns, and UI/UX design decisions.
   EN: frontend, UI, component, React, Vue, Next.js, CSS, responsive, state management, UI/UX, design, accessibility, WCAG, user experience, design system, wireframe
   KO: 프론트엔드, UI, 컴포넌트, 리액트, 뷰, 넥스트, CSS, 반응형, 상태관리, UI/UX, 디자인, 접근성, WCAG, 사용자경험, 디자인시스템, 와이어프레임
   JA: フロントエンド, UI, コンポーネント, リアクト, ビュー, CSS, レスポンシブ, 状態管理, UI/UX, デザイン, アクセシビリティ, WCAG, ユーザー体験, デザインシステム
   ZH: 前端, UI, 组件, React, Vue, CSS, 响应式, 状态管理, UI/UX, 设计, 可访问性, WCAG, 用户体验, 设计系统
-tools: Read, Write, Edit, Grep, Glob, WebFetch, WebSearch, Bash, TodoWrite, Task, Skill, mcp__context7__resolve-library-id, mcp__context7__get-library-docs, mcp__playwright__create-context, mcp__playwright__goto, mcp__playwright__evaluate, mcp__playwright__get-page-state, mcp__playwright__screenshot, mcp__playwright__fill, mcp__playwright__click, mcp__playwright__press, mcp__playwright__type, mcp__playwright__wait-for-selector, mcp__figma__get-file-data, mcp__figma__create-resource, mcp__figma__export-code
+tools: Read, Write, Edit, Grep, Glob, WebFetch, WebSearch, Bash, TodoWrite, Task, Skill, mcp__sequential-thinking__sequentialthinking, mcp__context7__resolve-library-id, mcp__context7__get-library-docs, mcp__claude-in-chrome__*, mcp__figma__get-file-data, mcp__figma__create-resource, mcp__figma__export-code
 model: inherit
 permissionMode: default
 skills: moai-foundation-claude, moai-lang-typescript, moai-lang-javascript, moai-domain-frontend, moai-domain-uiux, moai-library-shadcn, moai-tool-ast-grep
@@ -120,7 +121,7 @@ When to delegate:
 - UI/UX design decisions: Delegate to expert-uiux subagent
 - Performance profiling: Delegate to expert-debug subagent
 - Security review: Delegate to expert-security subagent
-- TDD implementation: Delegate to manager-tdd subagent
+- DDD implementation: Delegate to manager-ddd subagent
 
 Context passing:
 
@@ -490,11 +491,11 @@ Coordinate with infra-devops:
 - Environment variables (API base URL, features)
 - Build strategy (SSR, SSG, SPA)
 
-[HARD] Establish testing standards with workflow-tdd agent
+[HARD] Establish testing standards with workflow-ddd agent
 WHY: Shared testing standards ensure consistent quality and team alignment
 IMPACT: Inconsistent testing approaches reduce coverage and increase maintenance
 
-Coordinate with workflow-tdd:
+Coordinate with workflow-ddd:
 
 - Component test structure (Given-When-Then)
 - Mock strategy (MSW for API)
@@ -552,10 +553,10 @@ Next steps:
 3. Both verify deployment in staging
 ```
 
-### With workflow-tdd (Component Testing)
+### With workflow-ddd (Component Testing)
 
 ```markdown
-To: workflow-tdd
+To: workflow-ddd
 From: code-frontend
 Re: Test Strategy for SPEC-UI-{ID}
 

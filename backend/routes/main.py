@@ -9,7 +9,9 @@ from flask import (
 )
 from flask_login import current_user, login_required
 import jwt
-from backend.utils.auth import auth_required, admin_required as auth_admin_required
+from backend.utils.auth import auth_required
+from backend.models import User
+from backend.database import db
 
 main = Blueprint("main", __name__)
 
@@ -24,7 +26,6 @@ def index():
 def get_limits():
     """Get user's current upload limits."""
     from flask_login import AnonymousUserMixin
-    from backend.models import User
 
     # First check if Flask-Login has a user (session-based auth)
     if current_user.is_authenticated and not isinstance(
@@ -50,7 +51,7 @@ def get_limits():
             )
             user_id = payload.get("user_id")
             if user_id:
-                user = User.query.get(user_id)
+                user = db.session.get(User, user_id)
                 if user:
                     max_files = user.get_max_files()
                     return jsonify(
@@ -61,7 +62,11 @@ def get_limits():
                             "is_admin": user.is_admin,
                         }
                     )
-        except Exception:
+        except jwt.ExpiredSignatureError:
+            # LOG-002: Specific JWT exception handling
+            pass  # Expired token, fall through to anonymous
+        except jwt.InvalidTokenError:
+            # LOG-002: Specific JWT exception handling (covers DecodeError, InvalidSignatureError, etc.)
             pass  # Invalid token, fall through to anonymous
 
     # Anonymous users: 5 files per submission

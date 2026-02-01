@@ -47,7 +47,7 @@ def get_language_from_config(project_path: Path | str) -> str:
     try:
         import yaml
 
-        with open(language_file, encoding="utf-8") as f:
+        with open(language_file, encoding="utf-8", errors="replace") as f:
             config = yaml.safe_load(f)
 
         language = config.get("language", {}).get("conversation_language", DEFAULT_LANGUAGE)
@@ -88,7 +88,7 @@ def load_announcements_from_file(announcements_file: Path) -> list[str]:
         return []
 
     try:
-        with open(announcements_file, encoding="utf-8") as f:
+        with open(announcements_file, encoding="utf-8", errors="replace") as f:
             data = json.load(f)
         return data.get("companyAnnouncements", [])
     except Exception:
@@ -134,11 +134,11 @@ def get_default_announcements() -> list[str]:
         List of default announcement strings in English
     """
     return [
-        "🗿 MoAI-ADK: SPEC-First TDD with 48 Skills and Context7 integration",
+        "🗿 MoAI-ADK: SPEC-First DDD with 48 Skills and Context7 integration",
         "⚡ /moai:alfred: One-stop Plan→Run→Sync automation with intelligent routing",
         "🌳 moai-worktree: Parallel SPEC development - work on multiple features simultaneously",
         "🤖 20 Agents: 8 Expert + 8 Manager + 4 Builder for specialized tasks",
-        "📋 Workflow: /moai:1-plan (SPEC) → /moai:2-run (TDD) → /moai:3-sync (Docs)",
+        "📋 Workflow: /moai:1-plan (SPEC) → /moai:2-run (DDD) → /moai:3-sync (Docs)",
         "✅ Quality: TRUST 5 + ≥85% coverage + Ralph Engine (LSP + AST-grep)",
         "📚 Tip: moai update --templates-only syncs latest skills and agents",
         "🏆 moai rank: Track your Claude token usage on rank.mo.ai.kr",
@@ -165,7 +165,7 @@ def update_settings_announcements(project_path: Path | str) -> bool:
 
     try:
         # Load current settings
-        with open(settings_file, encoding="utf-8") as f:
+        with open(settings_file, encoding="utf-8", errors="replace") as f:
             settings = json.load(f)
 
         # Get language and announcements

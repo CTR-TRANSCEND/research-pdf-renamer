@@ -759,7 +759,7 @@ jobs:
 
       - name: Install MoAI-ADK
         run: |
-          pip install moai-adk
+          uv tool install moai-adk
           moai init
 
       - name: Run Ralph Loop
@@ -799,7 +799,7 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          pip install moai-adk
+          uv tool install moai-adk
           moai init
 
       - name: Run ${{ matrix.check }} Check
@@ -869,7 +869,7 @@ FROM python:3.13-slim
 WORKDIR /app
 
 # Install MoAI-ADK
-RUN pip install moai-adk
+RUN uv tool install moai-adk
 
 # Copy project
 COPY . .
@@ -1048,7 +1048,7 @@ Check:
   - Max iterations setting
   - Completion conditions
   - Error count not decreasing
-Solution: /moai:cancel-loop then review errors manually
+Solution: Send any message to stop loop, then review errors manually
 
 Issue: Loop completes too early
 Check:

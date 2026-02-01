@@ -145,68 +145,63 @@ if ! command -v python3 &> /dev/null; then
     exit 1
 fi
 
-# Check if we're in a conda environment
+# ==============================================
+# Conda Environment Check (Mandatory)
+# ==============================================
+
 if [ -z "$CONDA_DEFAULT_ENV" ]; then
-    echo -e "${YELLOW}Warning: Not in a conda environment${NC}"
-    echo "It's recommended to use a conda environment"
+    # Not in any conda environment
+    echo -e "${RED}Error: Not in a conda environment${NC}"
     echo ""
-    echo "To create a conda environment:"
-    echo "  conda create -n pdf-renamer python=3.10"
-    echo "  conda activate pdf-renamer"
+    echo "This script requires a conda environment (not 'base')."
     echo ""
-    read -p "Continue anyway? (y/n) " -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    echo "Options:"
+    echo "1. Create and activate a new conda environment:"
+    echo "   conda create -n pdf-renamer python=3.12"
+    echo "   conda activate pdf-renamer"
+    echo "   ./setup.sh"
+    echo ""
+    echo "2. Activate an existing conda environment:"
+    echo "   conda activate <your-env-name>"
+    echo "   ./setup.sh"
+    exit 1
+elif [ "$CONDA_DEFAULT_ENV" = "base" ]; then
+    # In base environment - not allowed
+    echo -e "${RED}Error: You are in the 'base' conda environment${NC}"
+    echo ""
+    echo "Using the 'base' environment is not recommended to avoid conflicts."
+    echo ""
+    echo "Would you like to create a dedicated environment?"
+    read -p "$(echo -e "${YELLOW}Create new conda environment 'pdf-renamer'? (y/n): ${NC}")" -n 1 -r
+    echo ""
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        ENV_NAME="pdf-renamer"
+        echo -e "${GREEN}Creating conda environment '${ENV_NAME}' with Python 3.12...${NC}"
+        conda create -n "$ENV_NAME" python=3.12 -y
+        echo ""
+        echo -e "${GREEN}Environment created! Please activate it and run setup again:${NC}"
+        echo "  conda activate $ENV_NAME"
+        echo "  ./setup.sh"
+        exit 0
+    else
+        echo -e "${YELLOW}Please activate a non-base conda environment and run setup again:${NC}"
+        echo "  conda create -n pdf-renamer python=3.12"
+        echo "  conda activate pdf-renamer"
+        echo "  ./setup.sh"
         exit 1
     fi
-fi
-
-# ==============================================
-# Python Virtual Environment Setup (Idempotent)
-# ==============================================
-
-# Function to check if venv has all required packages
-check_venv_packages() {
-    if [ ! -d "venv" ]; then
-        return 1
-    fi
-
-    source venv/bin/activate
-
-    # Check if pip is available in venv
-    if ! command -v pip &> /dev/null; then
-        deactivate
-        return 1
-    fi
-
-    # Check if critical packages are installed
-    local required_packages=("flask" "pydantic" "PyPDF2")
-    for pkg in "${required_packages[@]}"; do
-        if ! pip show "$pkg" &> /dev/null; then
-            deactivate
-            return 1
-        fi
-    done
-
-    deactivate
-    return 0
-}
-
-# Create or verify virtual environment
-if check_venv_packages; then
-    echo -e "${GREEN}Virtual environment exists and has all required packages${NC}"
 else
-    if [ -d "venv" ]; then
-        echo -e "${YELLOW}Virtual environment exists but missing packages. Recreating...${NC}"
-        rm -rf venv
-    fi
-    echo -e "${GREEN}Creating virtual environment...${NC}"
-    python3 -m venv venv
+    echo -e "${GREEN}Using conda environment: ${CONDA_DEFAULT_ENV}${NC}"
 fi
+echo ""
 
-# Activate virtual environment
-echo -e "${GREEN}Activating virtual environment...${NC}"
-source venv/bin/activate
+# ==============================================
+# Python Environment Setup (Conda-Aware)
+# ==============================================
+
+# We're in a conda environment (non-base), use it directly
+echo -e "${GREEN}Installing packages in current conda environment (${CONDA_DEFAULT_ENV})${NC}"
+echo ""
 
 # Upgrade pip
 echo -e "${GREEN}Upgrading pip...${NC}"
@@ -217,12 +212,12 @@ echo -e "${GREEN}Installing dependencies...${NC}"
 
 # ERROR-PROOFING: Validate requirements.txt before installation
 echo -e "${BLUE}Validating package versions...${NC}"
-if python3 scripts/validate_requirements.py requirements.txt; then
+if python scripts/validate_requirements.py requirements.txt; then
     echo -e "${GREEN}All packages validated successfully${NC}"
 else
     echo -e "${RED}Package validation failed. Please fix requirements.txt and try again.${NC}"
     echo ""
-    echo -e "${YELLOW}Tip: Run 'python3 scripts/validate_requirements.py' to see detailed errors${NC}"
+    echo -e "${YELLOW}Tip: Run 'python scripts/validate_requirements.py' to see detailed errors${NC}"
     exit 1
 fi
 echo -e "${GREEN}Installing dependencies...${NC}"

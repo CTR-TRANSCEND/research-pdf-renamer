@@ -18,6 +18,8 @@ from __future__ import annotations
 
 import json
 import logging
+import re
+import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -261,7 +263,7 @@ except ImportError:
             return {}
 
         try:
-            content = file_path.read_text(encoding="utf-8")
+            content = file_path.read_text(encoding="utf-8", errors="replace")
             if HAS_YAML_FALLBACK:
                 return yaml_fallback.safe_load(content) or {}
             else:
@@ -294,7 +296,7 @@ except ImportError:
                 is_safe, _ = check_file_size(json_config_path)
                 if is_safe:
                     try:
-                        config = json.loads(json_config_path.read_text(encoding="utf-8"))
+                        config = json.loads(json_config_path.read_text(encoding="utf-8", errors="replace"))
                     except (json.JSONDecodeError, OSError):
                         config = {}
                 else:
@@ -343,7 +345,7 @@ except ImportError:
 
                 try:
                     # Read spec.md content
-                    content = spec_file.read_text(encoding="utf-8")
+                    content = spec_file.read_text(encoding="utf-8", errors="replace")
 
                     # Parse YAML frontmatter (between --- delimiters)
                     if content.startswith("---"):
@@ -666,7 +668,7 @@ def check_version_update() -> tuple[str, bool]:
 
         if version_cache_file.exists():
             try:
-                cache_data = json.loads(version_cache_file.read_text())
+                cache_data = json.loads(version_cache_file.read_text(encoding="utf-8", errors="replace"))
                 latest_version = cache_data.get("latest")
             except (json.JSONDecodeError, OSError, UnicodeDecodeError):
                 # Cache file read or JSON parsing errors
@@ -928,13 +930,17 @@ def format_session_output() -> str:
     # Load user personalization settings
     personalization = load_user_personalization()
 
-    # Get MoAI version from installed package (not config.json)
+    # Get MoAI version from CLI (works with uv tool installations)
     try:
-        from moai_adk import __version__ as installed_version
-
-        moai_version = installed_version
-    except ImportError:
-        # Fallback to config version if package import fails
+        result = subprocess.run(["moai", "--version"], capture_output=True, text=True, check=True, timeout=5)
+        # Extract version number from output (e.g., "MoAI version X.Y.Z" or "X.Y.Z")
+        version_match = re.search(r"(\d+\.\d+\.\d+)", result.stdout)
+        if version_match:
+            moai_version = version_match.group(1)
+        else:
+            moai_version = "unknown"
+    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
+        # Fallback to config version if CLI fails
         moai_version = "unknown"
         if config:
             moai_version = config.get("moai", {}).get("version", "unknown")

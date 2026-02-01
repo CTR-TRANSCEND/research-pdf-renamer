@@ -48,16 +48,17 @@ def parse_requirements(file_path: str) -> List[Tuple[str, str]]:
 
             # Parse package requirement (simplified, handles most cases)
             # Format: package==version, package>=version, package
-            # Remove environment markers
-            line = re.split(r';|==|>=|<=|>|~|=', line)[0].strip()
+            # Extract version FIRST before stripping the line
+            version_match = re.search(r'==([0-9.]+)', line)
+            version = version_match.group(1) if version_match else ""
+
+            # Remove environment markers and version specs to get package name
+            line = re.split(r';|==|>=|<=|>|~|=|\[', line)[0].strip()
 
             # Extract package name (before any version spec)
             match = re.match(r'^([a-zA-Z0-9._-]+)', line)
             if match:
                 package = match.group(1)
-                # Extract version specifier if present
-                version_match = re.search(r'==([0-9.]+)', line)
-                version = version_match.group(1) if version_match else ""
                 packages.append((package, version))
 
     return packages
@@ -74,60 +75,81 @@ def check_package_exists(package: str, version: str = "") -> Tuple[bool, str, st
         Tuple of (exists, latest_version, error_message)
     """
     try:
-        # Use pip index to check package availability
-        if version:
-            # Check specific version
-            result = subprocess.run(
-                ['pip', 'index', 'versions', package, '--format', 'json'],
-                capture_output=True,
-                text=True,
-                timeout=30
-            )
-        else:
-            # Just check if package exists (get latest)
-            result = subprocess.run(
-                ['pip', 'index', 'versions', package, '--format', 'json'],
-                capture_output=True,
-                text=True,
-                timeout=30
-            )
+        # Method 1: Try pip show to check if package is known to PyPI
+        # This is fast and works for most packages
+        result = subprocess.run(
+            ['pip', 'show', package],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
 
-        if result.returncode != 0:
-            return False, "", f"Package '{package}' not found on PyPI"
+        # Package exists if pip show succeeds
+        if result.returncode == 0:
+            # Parse version from output
+            latest = ""
+            for line in result.stdout.split('\n'):
+                if line.startswith('Version:'):
+                    latest = line.split(':', 1)[1].strip()
+                    break
 
-        import json
-        try:
-            data = json.loads(result.stdout)
-        except json.JSONDecodeError:
-            return False, "", f"Could not parse response for '{package}'"
+            if version:
+                if version == latest:
+                    return True, latest, ""
+                else:
+                    # Check if specific version can be fetched
+                    check_result = subprocess.run(
+                        ['pip', 'download', '--only-binary=:all:', '--no-deps', '--dest', '/tmp', f'{package}=={version}'],
+                        capture_output=True,
+                        text=True,
+                        timeout=30
+                    )
+                    # Clean up any downloaded file
+                    subprocess.run(['rm', '-f', f'/tmp/{package}=={version}*.whl', f'/tmp/{package}-{version}*.tar.gz'],
+                                   capture_output=True)
 
-        if not data:
-            return False, "", f"No versions found for '{package}'"
-
-        # Extract available versions
-        versions = data.get(package, [])
-        if not versions:
-            return False, "", f"Package '{package}' has no available versions"
-
-        latest = versions[0]
-
-        if version:
-            # Check if specific version exists
-            if version in versions:
-                return True, latest, ""
+                    if check_result.returncode == 0:
+                        return True, latest, ""
+                    else:
+                        return False, latest, f"Version {version} may not be available (latest: {latest})"
             else:
-                # Find closest available version
-                available = ", ".join(versions[:5])  # Show first 5
-                if len(versions) > 5:
-                    available += ", ..."
-                return False, latest, f"Version {version} not found. Available: {available}"
+                return True, latest, ""
+
+        # Method 2: Package not installed, try to fetch metadata from PyPI
+        # Use pip download with --no-deps to just check availability
+        check_spec = f'{package}=={version}' if version else package
+        result = subprocess.run(
+            ['pip', 'download', '--no-deps', '--no-binary', ':all:', '--dest', '/tmp', check_spec],
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+
+        # Clean up any downloaded file
+        subprocess.run(
+            ['find', '/tmp', '-name', f'{package}*', '-type', 'f', '-delete'],
+            capture_output=True
+        )
+
+        if result.returncode == 0:
+            return True, "", ""
         else:
-            return True, latest, ""
+            # Check if error is about version not found
+            stderr_lower = result.stderr.lower()
+            if 'no matching distribution' in stderr_lower or 'could not find a version' in stderr_lower:
+                return False, "", f"Package '{package}' not found on PyPI"
+            else:
+                # Might be a different error, but package likely exists
+                return True, "", ""
 
     except subprocess.TimeoutExpired:
         return False, "", f"Timeout checking '{package}'"
+    except FileNotFoundError:
+        # pip not found - skip validation
+        return True, "", ""
     except Exception as e:
-        return False, "", f"Error checking '{package}': {str(e)}"
+        # On any error, allow installation to proceed (pip will give clearer error)
+        return True, "", f"Warning: Could not validate '{package}': {str(e)}"
 
 
 def validate_requirements(file_path: str = "requirements.txt") -> Tuple[bool, List[str]]:

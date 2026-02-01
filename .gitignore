@@ -251,3 +251,4 @@ dist-ssr/
 *.pyd
 .moai-backups/
 .coverage
+.claude/plans/

@@ -81,15 +81,24 @@ if lsof -ti:$PORT > /dev/null 2>&1; then
     fi
 fi
 
-# Activate virtual environment if it exists
-if [ -d "venv" ]; then
+# Python environment activation
+if [ -n "$CONDA_DEFAULT_ENV" ]; then
+    # Already in conda environment
+    echo "Using conda environment: ${CONDA_DEFAULT_ENV}"
+elif [ -d "venv" ]; then
     echo "Activating virtual environment..."
     source venv/bin/activate
 elif [ -d ".venv" ]; then
     echo "Activating virtual environment..."
     source .venv/bin/activate
 else
-    echo "Warning: No virtual environment found. Using system Python."
+    echo "Error: No Python environment found."
+    echo ""
+    echo "Please either:"
+    echo "1. Activate a conda environment: conda activate <env-name>"
+    echo "2. Create a conda environment: conda create -n pdf-renamer python=3.12"
+    echo "3. Run setup.sh to create a virtual environment"
+    exit 1
 fi
 
 # Start the application

@@ -283,11 +283,6 @@ async function processFiles() {
         });
     }
 
-    // Add auth token if user is logged in
-    if (currentUser) {
-        formData.append('token', localStorage.getItem('auth_token'));
-    }
-
     try {
         // Update individual file progress
         filesToProcess.forEach((item, index) => {
@@ -612,20 +607,14 @@ function updateLimitsDisplay() {
 
 // Check authentication status
 async function checkAuthStatus() {
-    const token = localStorage.getItem('auth_token');
-    if (!token) {
-        updateAuthUI(null);
-        return;
-    }
-
+    // JWT is now stored in HttpOnly cookie, sent automatically with requests
     try {
-        axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
         const response = await axios.get('/auth/me');
         currentUser = response.data.user;
         updateAuthUI(currentUser);
     } catch (error) {
-        localStorage.removeItem('auth_token');
-        delete axios.defaults.headers.common['Authorization'];
+        // Not authenticated or session expired
+        currentUser = null;
         updateAuthUI(null);
     }
 }
@@ -697,7 +686,7 @@ function toggleUserMenu(event) {
     if (!isHidden) {
         // Get the button element (either from event or by finding the user icon button)
         const button = event?.target?.closest('button') ||
-                       document.querySelector('button[onclick="toggleUserMenu()"]') ||
+                       document.querySelector('button[onclick^="toggleUserMenu"]') ||
                        document.querySelector('.fa-user-circle')?.closest('button');
 
         if (button) {
@@ -717,7 +706,7 @@ function toggleUserMenu(event) {
 // Close user menu when clicking outside
 document.addEventListener('click', function(event) {
     const userMenu = document.getElementById('user-menu');
-    const userIcon = event.target.closest('button[onclick="toggleUserMenu()"]');
+    const userIcon = event.target.closest('button[onclick^="toggleUserMenu"]');
 
     if (!userIcon && !userMenu.contains(event.target)) {
         userMenu.classList.add('hidden');
@@ -787,8 +776,8 @@ async function handleLogin(event) {
             remember: remember
         });
 
-        // Save token
-        localStorage.setItem('auth_token', response.data.token);
+        // JWT token is now stored in HttpOnly cookie (not localStorage) for XSS protection
+        // Cookie is automatically sent with requests, no manual token handling needed
 
         // Update UI
         updateAuthUI(response.data.user);
@@ -835,8 +824,8 @@ async function handleRegister(event) {
             password: password
         });
 
-        // Save token
-        localStorage.setItem('auth_token', response.data.token);
+        // JWT token is now stored in HttpOnly cookie (not localStorage) for XSS protection
+        // Cookie is automatically sent with requests, no manual token handling needed
 
         // Update UI
         updateAuthUI(response.data.user);
@@ -859,25 +848,16 @@ async function handleRegister(event) {
 // Handle logout
 async function logout() {
     try {
-        const token = localStorage.getItem('auth_token');
-        if (token) {
-            await axios.post('/auth/logout', {}, {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
-            });
-        }
+        // Logout clears the HttpOnly JWT cookie server-side
+        await axios.post('/auth/logout');
     } catch (error) {
         console.error('Logout error:', error);
     } finally {
-        // Always clear local data
-        localStorage.removeItem('auth_token');
+        // Clear local data (but not auth_token - that's now in HttpOnly cookie)
         currentUser = null;
-        // Clear the authorization header from axios defaults
-        delete axios.defaults.headers.common['Authorization'];
         updateAuthUI(null);
         showToast('Logged out successfully', 'success');
-        // Now load the anonymous user limits (without auth header)
+        // Now load the anonymous user limits
         loadUserLimits();
     }
 }
@@ -913,14 +893,10 @@ async function handleChangePassword(event) {
     changeBtn.innerHTML = '<i class="fas fa-spinner animate-spin mr-2"></i>Changing...';
 
     try {
-        const token = localStorage.getItem('auth_token');
+        // JWT cookie is sent automatically
         const response = await axios.post('/auth/change-password', {
             current_password: currentPassword,
             new_password: newPassword
-        }, {
-            headers: {
-                'Authorization': `Bearer ${token}`
-            }
         });
 
         showToast(response.data.message, 'success');
@@ -938,12 +914,8 @@ async function handleChangePassword(event) {
 // Show usage stats
 async function showUsageStats() {
     try {
-        const token = localStorage.getItem('auth_token');
-        const response = await axios.get('/usage-stats', {
-            headers: {
-                'Authorization': `Bearer ${token}`
-            }
-        });
+        // JWT cookie is sent automatically
+        const response = await axios.get('/usage-stats');
 
         const stats = response.data;
 
@@ -1081,7 +1053,8 @@ let isWarningShown = false;
 // Initialize inactivity tracking
 function initializeInactivityTracking() {
     // Don't track inactivity for unauthenticated users
-    if (!localStorage.getItem('auth_token')) {
+    // Check if user is authenticated via the currentUser variable (set by checkAuthStatus)
+    if (!currentUser) {
         return;
     }
 
@@ -1131,20 +1104,26 @@ function setupActivityListeners() {
 // Handle user activity
 function handleUserActivity(event) {
     // Don't track activity if user is not authenticated
-    if (!localStorage.getItem('auth_token')) {
+    // Check if user is authenticated via the currentUser variable (set by checkAuthStatus)
+    if (!currentUser) {
         return;
     }
 
     // Reset timer on any user interaction
     resetInactivityTimer();
 
-    // DISABLED: Token refresh was causing API spam
+    // ============================================================
+    // DISABLED: Token Refresh Auto-Renewal (2024-01-15)
+    // Reason: Causing API spam and authentication issues
+    // Status: Intentionally disabled - not a bug
+    // TODO: Re-evaluate if rate limiting is implemented
+    // ============================================================
     // checkTokenRenewal();
 }
 
 // Handle page visibility change
 function handleVisibilityChange() {
-    if (!document.hidden && localStorage.getItem('auth_token')) {
+    if (!document.hidden && currentUser) {
         // Page became visible, check if we should show warning
         const timeSinceLastActivity = Date.now() - lastActivityTime;
         const timeUntilWarning = INACTIVITY_TIMEOUT - WARNING_TIMEOUT - timeSinceLastActivity;
@@ -1280,7 +1259,12 @@ document.addEventListener('DOMContentLoaded', () => {
     setTimeout(() => {
         initializeInactivityTracking();
 
-        // DISABLED: Token refresh was causing API spam and authentication issues
+        // ============================================================
+        // DISABLED: Token Refresh Auto-Renewal (2024-01-15)
+        // Reason: Causing API spam and authentication issues
+        // Status: Intentionally disabled - not a bug
+        // TODO: Re-evaluate if rate limiting is implemented
+        // ============================================================
         // setInterval(checkTokenRenewal, 10 * 60 * 1000);
     }, 1000);
 });
