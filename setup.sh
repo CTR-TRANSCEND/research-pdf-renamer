@@ -22,7 +22,7 @@ echo "  - Create Apache configuration file"
 echo "  - Enable required modules (proxy, proxy_http)"
 echo "  - Restart Apache service"
 echo ""
-read -p "$(echo -e ${YELLOW}Do you want to set up Apache reverse proxy? (y/n): ${NC})" -n 1 -r
+read -p "$(echo -e "${YELLOW}Do you want to set up Apache reverse proxy? (y/n): ${NC}")" -n 1 -r
 echo ""
 if [[ $REPLY =~ ^[Yy]$ ]]; then
     SETUP_APACHE=true
@@ -70,6 +70,18 @@ echo -e "${GREEN}Upgrading pip...${NC}"
 pip install --upgrade pip
 
 # Install dependencies
+echo -e "${GREEN}Installing dependencies...${NC}"
+
+# ERROR-PROOFING: Validate requirements.txt before installation
+echo -e "${BLUE}Validating package versions...${NC}"
+if python3 scripts/validate_requirements.py requirements.txt; then
+    echo -e "${GREEN}All packages validated successfully${NC}"
+else
+    echo -e "${RED}Package validation failed. Please fix requirements.txt and try again.${NC}"
+    echo ""
+    echo -e "${YELLOW}Tip: Run 'python3 scripts/validate_requirements.py' to see detailed errors${NC}"
+    exit 1
+fi
 echo -e "${GREEN}Installing dependencies...${NC}"
 pip install -r requirements.txt
 
@@ -121,9 +133,13 @@ fi
 echo ""
 echo -e "${GREEN}Initializing database...${NC}"
 export FLASK_APP=run.py
-flask db init 2>/dev/null || true
-flask db migrate -m "Initial migration" 2>/dev/null || true
-flask db upgrade
+if flask db --help >/dev/null 2>&1; then
+    flask db init 2>/dev/null || true
+    flask db migrate -m "Initial migration" 2>/dev/null || true
+    flask db upgrade
+else
+    echo -e "${YELLOW}Flask-Migrate not installed; skipping 'flask db' steps.${NC}"
+fi
 
 echo ""
 echo -e "${GREEN}========================================${NC}"
@@ -176,6 +192,9 @@ if [ "$SETUP_APACHE" = true ]; then
 
     # Apache configuration template
     APACHE_CONF_CONTENT="<VirtualHost *:80>
+    ServerName localhost
+    ServerAlias 127.0.0.1
+    DocumentRoot /var/www/html
     # Research PDF File Renamer - Reverse Proxy Configuration
     # This routes requests from http://localhost/pdf-renamer/ to the Flask app
 
@@ -183,13 +202,12 @@ if [ "$SETUP_APACHE" = true ]; then
     ProxyPreserveHost On
 
     # Proxy configuration for the application
-    ProxyPass /pdf-renamer/ http://localhost:5000/
-    ProxyPassReverse /pdf-renamer/ http://localhost:5000/
+    ProxyPass /pdf-renamer/ http://localhost:5000/pdf-renamer/
+    ProxyPassReverse /pdf-renamer/ http://localhost:5000/pdf-renamer/
 
     # Set proper headers
     <Location /pdf-renamer/>
         ProxyPassReverse /
-        ProxyPassReverseAdjustHeaders On
     </Location>
 
     # Optional: Enable for HTTPS (uncomment and configure)
@@ -214,12 +232,19 @@ if [ "$SETUP_APACHE" = true ]; then
     echo "  3. Enable the site configuration"
     echo "  4. Restart Apache"
     echo ""
-    read -p "$(echo -e ${YELLOW}Continue with Apache setup? (y/n): ${NC})" -n 1 -r
+    read -p "$(echo -e "${YELLOW}Continue with Apache setup? (y/n): ${NC}")" -n 1 -r
     echo ""
 
     if [[ ! $REPLY =~ ^[Yy]$ ]]; then
         echo -e "${YELLOW}Apache setup cancelled.${NC}"
         exit 0
+    fi
+
+    echo -e "${GREEN}Requesting sudo access...${NC}"
+    sudo -k
+    if ! sudo -v; then
+        echo -e "${RED}Sudo authentication failed. Aborting Apache setup.${NC}"
+        exit 1
     fi
 
     # Write Apache configuration
