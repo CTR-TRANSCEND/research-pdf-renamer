@@ -12,6 +12,112 @@ echo -e "${BLUE}Research PDF File Renamer Setup${NC}"
 echo -e "${BLUE}========================================${NC}"
 echo ""
 
+# ==============================================
+# System Package Detection
+# ==============================================
+
+detect_package_manager() {
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        if command -v brew >/dev/null 2>&1; then
+            echo "brew"
+            return 0
+        fi
+    fi
+
+    for pkgman in apt yum dnf pacman; do
+        if command -v "$pkgman" >/dev/null 2>&1; then
+            echo "$pkgman"
+            return 0
+        fi
+    done
+
+    echo "unknown"
+    return 1
+}
+
+check_system_package() {
+    local package="$1"
+    local pkg_manager="$2"
+
+    case $pkg_manager in
+        "apt")
+            dpkg -s "$package" >/dev/null 2>&1
+            ;;
+        "yum"|"dnf")
+            rpm -q "$package" >/dev/null 2>&1
+            ;;
+        "pacman")
+            pacman -Q "$package" >/dev/null 2>&1
+            ;;
+        "brew")
+            brew list | grep -q "$package"
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+# Optional system package installation
+echo ""
+echo -e "${BLUE}========================================${NC}"
+echo -e "${BLUE}System Package Check${NC}"
+echo -e "${BLUE}========================================${NC}"
+echo ""
+
+PACKAGE_MANAGER=$(detect_package_manager)
+echo -e "Detected package manager: ${GREEN}$PACKAGE_MANAGER${NC}"
+echo ""
+
+# System packages that may be needed
+SYSTEM_PACKAGES=("python3-venv" "python3-dev" "build-essential" "git")
+MISSING_PACKAGES=()
+
+for pkg in "${SYSTEM_PACKAGES[@]}"; do
+    if ! check_system_package "$pkg" "$PACKAGE_MANAGER"; then
+        MISSING_PACKAGES+=("$pkg")
+    fi
+done
+
+if [ ${#MISSING_PACKAGES[@]} -gt 0 ]; then
+    echo -e "${YELLOW}The following system packages are missing:${NC}"
+    for pkg in "${MISSING_PACKAGES[@]}"; do
+        echo "  - $pkg"
+    done
+    echo ""
+    echo -e "${YELLOW}These may be required for full functionality.${NC}"
+    echo ""
+    read -p "$(echo -e "${YELLOW}Install missing packages now? (y/n): ${NC}")" -n 1 -r
+    echo ""
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        echo -e "${GREEN}Installing system packages...${NC}"
+        case $PACKAGE_MANAGER in
+            "apt")
+                sudo apt-get update
+                sudo apt-get install -y "${MISSING_PACKAGES[@]}"
+                ;;
+            "yum")
+                sudo yum install -y "${MISSING_PACKAGES[@]}"
+                ;;
+            "dnf")
+                sudo dnf install -y "${MISSING_PACKAGES[@]}"
+                ;;
+            "pacman")
+                sudo pacman -S --noconfirm "${MISSING_PACKAGES[@]}"
+                ;;
+            "brew")
+                brew install "${MISSING_PACKAGES[@]}"
+                ;;
+        esac
+        echo -e "${GREEN}System packages installed successfully${NC}"
+    else
+        echo -e "${YELLOW}Skipping system package installation${NC}"
+    fi
+else
+    echo -e "${GREEN}All required system packages are installed${NC}"
+fi
+echo ""
+
 # Ask about Apache configuration upfront
 echo -e "${YELLOW}Apache Reverse Proxy Configuration${NC}"
 echo "This application can be accessed through Apache at:"
@@ -55,8 +161,45 @@ if [ -z "$CONDA_DEFAULT_ENV" ]; then
     fi
 fi
 
-# Create virtual environment if it doesn't exist
-if [ ! -d "venv" ]; then
+# ==============================================
+# Python Virtual Environment Setup (Idempotent)
+# ==============================================
+
+# Function to check if venv has all required packages
+check_venv_packages() {
+    if [ ! -d "venv" ]; then
+        return 1
+    fi
+
+    source venv/bin/activate
+
+    # Check if pip is available in venv
+    if ! command -v pip &> /dev/null; then
+        deactivate
+        return 1
+    fi
+
+    # Check if critical packages are installed
+    local required_packages=("flask" "pydantic" "PyPDF2")
+    for pkg in "${required_packages[@]}"; do
+        if ! pip show "$pkg" &> /dev/null; then
+            deactivate
+            return 1
+        fi
+    done
+
+    deactivate
+    return 0
+}
+
+# Create or verify virtual environment
+if check_venv_packages; then
+    echo -e "${GREEN}Virtual environment exists and has all required packages${NC}"
+else
+    if [ -d "venv" ]; then
+        echo -e "${YELLOW}Virtual environment exists but missing packages. Recreating...${NC}"
+        rm -rf venv
+    fi
     echo -e "${GREEN}Creating virtual environment...${NC}"
     python3 -m venv venv
 fi
