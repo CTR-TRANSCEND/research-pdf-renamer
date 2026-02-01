@@ -271,7 +271,8 @@ fi
 echo ""
 echo -e "${GREEN}Initializing database...${NC}"
 export FLASK_APP=run.py
-if flask db --help >/dev/null 2>&1; then
+# Check if Flask-Migrate commands are available
+if flask db 2>&1 | grep -q "Usage"; then
     flask db init 2>/dev/null || true
     flask db migrate -m "Initial migration" 2>/dev/null || true
     flask db upgrade
