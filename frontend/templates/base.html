@@ -107,7 +107,9 @@
     <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
     <!-- Set global API base URL for reverse proxy support -->
     <script>
-        window.API_BASE_URL = '{{ request.script_root }}/api';
+        // Use request.script_root for reverse proxy support, default to '/api' for direct access
+        var scriptRoot = '{{ request.script_root }}';
+        window.API_BASE_URL = (scriptRoot && scriptRoot !== '/') ? scriptRoot + '/api' : '/api';
         window.STATIC_URL = '{{ url_for('static', filename='') }}';
     </script>
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
