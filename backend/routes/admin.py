@@ -1587,7 +1587,6 @@ def system_status():
 
 
 @admin.route("/users/<int:user_id>/admin", methods=["PUT"])
-@csrf_exempt()
 @admin_required
 def toggle_user_admin(user_id):
     """Toggle user admin status."""
