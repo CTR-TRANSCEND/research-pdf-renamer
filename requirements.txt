@@ -1,7 +1,6 @@
 # DEP-001 FIX: Update Flask to 2.3.8+ for CVE-2024-3992 fix
 Flask==3.0.3
 Flask-SQLAlchemy==3.1.1
-Flask-Migrate==4.0.7
 Flask-Login==0.6.3
 Flask-WTF==1.2.2
 WTForms==3.2.1

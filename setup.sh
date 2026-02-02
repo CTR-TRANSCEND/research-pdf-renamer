@@ -267,18 +267,9 @@ EOF
     echo ""
 fi
 
-# Initialize database
+# Database will be initialized automatically on first run
 echo ""
-echo -e "${GREEN}Initializing database...${NC}"
-export FLASK_APP=run.py
-# Check if Flask-Migrate commands are available
-if flask db 2>&1 | grep -q "Usage"; then
-    flask db init 2>/dev/null || true
-    flask db migrate -m "Initial migration" 2>/dev/null || true
-    flask db upgrade
-else
-    echo -e "${YELLOW}Flask-Migrate not installed; skipping 'flask db' steps.${NC}"
-fi
+echo -e "${GREEN}Database will be created automatically on first run.${NC}"
 
 echo ""
 echo -e "${GREEN}========================================${NC}"
