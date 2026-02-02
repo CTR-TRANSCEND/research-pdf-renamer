@@ -792,6 +792,10 @@
                         ` : `
                             <button onclick="activateUser(${user.id})" class="text-green-600 hover:text-green-900 mr-3">Activate</button>
                         `}
+                        <button onclick="toggleUserAdmin(${user.id}, '${user.email.replace(/'/g, "\\\")}', ${user.is_admin})"
+                                class="${user.is_admin ? 'text-orange-600 hover:text-orange-900' : 'text-purple-600 hover:text-purple-900'} mr-3">
+                            ${user.is_admin ? 'Remove Admin' : 'Make Admin'}
+                        </button>
                         <button onclick="deleteUser(${user.id})" class="text-red-600 hover:text-red-900">Delete</button>
                     </td>
                 </tr>
@@ -1492,6 +1496,21 @@
         } catch (error) {
             console.error('Error deleting user:', error);
             showToast(error.response?.data?.error || 'Error deleting user', 'error');
+        }
+    }
+
+    // Toggle user admin status
+    async function toggleUserAdmin(userId, userEmail, isCurrentlyAdmin) {
+        const action = isCurrentlyAdmin ? 'remove from admin' : 'make admin';
+        if (!confirm(`Are you sure you want to ${action} this user?`)) return;
+
+        try {
+            await axios.put(`admin/users/${userId}/admin`);
+            showToast(`User ${action}d successfully`, 'success');
+            loadUsers();
+        } catch (error) {
+            console.error('Error toggling admin status:', error);
+            showToast(error.response?.data?.error || 'Error toggling admin status', 'error');
         }
     }
 

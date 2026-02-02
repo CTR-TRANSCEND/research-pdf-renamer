@@ -1586,6 +1586,36 @@ def system_status():
     )
 
 
+@admin.route("/users/<int:user_id>/admin", methods=["PUT"])
+@csrf_exempt()
+@admin_required
+def toggle_user_admin(user_id):
+    """Toggle user admin status."""
+    try:
+        # Only super-admins can modify admin status
+        if not current_user.is_admin:
+            return jsonify({"error": "Permission denied"}), 403
+
+        user = User.query.get_or_404(user_id)
+
+        # Prevent users from removing their own admin status
+        if user.id == current_user.id:
+            return jsonify({"error": "Cannot modify your own admin status"}), 400
+
+        # Toggle admin status
+        user.is_admin = not user.is_admin
+        db.session.commit()
+
+        return jsonify({
+            "message": f"User {'promoted to' if user.is_admin else 'removed from'} admin",
+            "is_admin": user.is_admin
+        })
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
 @admin.route("/users/<int:user_id>/limits", methods=["PUT"])
 @admin_required
 def update_user_limits(user_id):
