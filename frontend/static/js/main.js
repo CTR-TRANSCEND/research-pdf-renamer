@@ -41,39 +41,57 @@ function setupEventListeners() {
     const filesModeBtn = document.getElementById('files-mode-btn');
     const folderModeBtn = document.getElementById('folder-mode-btn');
 
-    // Mode switching
-    filesModeBtn.addEventListener('click', () => switchMode('files'));
-    folderModeBtn.addEventListener('click', () => switchMode('folder'));
+    // Mode switching (only if buttons exist)
+    if (filesModeBtn) {
+        filesModeBtn.addEventListener('click', () => switchMode('files'));
+    }
+    if (folderModeBtn) {
+        folderModeBtn.addEventListener('click', () => switchMode('folder'));
+    }
 
     // Click to upload
-    filesDropZone.addEventListener('click', () => fileInput.click());
-    folderDropZone.addEventListener('click', () => {
-        // Only approved registered users can upload folders
-        if (currentUser && currentUser.is_approved) {
-            folderInput.click();
-        } else {
-            showFolderRestrictionModal();
-        }
-    });
+    if (filesDropZone) {
+        filesDropZone.addEventListener('click', () => fileInput.click());
+    }
+    if (folderDropZone) {
+        folderDropZone.addEventListener('click', () => {
+            // Only approved registered users can upload folders
+            if (currentUser && currentUser.is_approved) {
+                folderInput.click();
+            } else {
+                showFolderRestrictionModal();
+            }
+        });
+    }
 
     // File input change
-    fileInput.addEventListener('change', (e) => {
-        handleFiles(e.target.files);
-    });
+    if (fileInput) {
+        fileInput.addEventListener('change', (e) => {
+            handleFiles(e.target.files);
+        });
+    }
 
     // Folder input change
-    folderInput.addEventListener('change', (e) => {
-        handleFolder(e.target.files);
-    });
+    if (folderInput) {
+        folderInput.addEventListener('change', (e) => {
+            handleFolder(e.target.files);
+        });
+    }
 
     // Drag and drop events for files
-    setupDragAndDrop(filesDropZone, handleFiles);
+    if (filesDropZone) {
+        setupDragAndDrop(filesDropZone, handleFiles);
+    }
 
       // Drag and drop events for folders
-    setupDragAndDrop(folderDropZone, handleFolder);
+    if (folderDropZone) {
+        setupDragAndDrop(folderDropZone, handleFolder);
+    }
 
     // Process button
-    processBtn.addEventListener('click', processFiles);
+    if (processBtn) {
+        processBtn.addEventListener('click', processFiles);
+    }
 }
 
 // Setup drag and drop for a zone
