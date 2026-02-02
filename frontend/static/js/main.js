@@ -770,7 +770,7 @@ async function handleLogin(event) {
     loginBtn.innerHTML = '<i class="fas fa-spinner animate-spin mr-2"></i>Logging in...';
 
     try {
-        const response = await axios.post('/auth/login', {
+        const response = await axios.post(`${window.API_BASE_URL}/auth/login`, {
             email: email,
             password: password,
             remember: remember
