@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify, make_response, session
+from flask import Blueprint, request, jsonify, make_response, session, current_app
 from flask_login import login_user, logout_user, login_required, current_user
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -12,6 +12,20 @@ from backend.utils.auth import (
     clear_jwt_cookie,
 )
 from datetime import datetime
+from flask_wtf.csrf import CSRFError
+
+
+def csrf_exempt():
+    """Decorator to exempt a view from CSRF protection."""
+    def wrapper(f):
+        f.csrf_exempt = True
+        return f
+    return wrapper
+
+
+def is_csrf_exempt(view):
+    """Check if a view is exempt from CSRF protection."""
+    return getattr(view, 'csrf_exempt', False)
 
 # Initialize limiter for this blueprint
 limiter = Limiter(
@@ -32,6 +46,7 @@ auth = Blueprint("auth", __name__)
 
 
 @auth.route("/register", methods=["POST"])
+@csrf_exempt()
 @limiter.limit("5 per hour", key_func=get_remote_address)
 def register():
     """Register a new user."""
@@ -117,6 +132,7 @@ def login_page():
 
 
 @auth.route("/login", methods=["POST"])
+@csrf_exempt()
 @limiter.limit("10 per minute", key_func=get_remote_address)
 def login():
     """Login existing user and set JWT in HttpOnly cookie."""
@@ -172,6 +188,7 @@ def login():
 
 
 @auth.route("/logout", methods=["POST"])
+@csrf_exempt()
 @login_required
 def logout():
     """Logout current user and clear JWT cookie."""
@@ -205,6 +222,7 @@ def get_current_user():
 
 
 @auth.route("/change-password", methods=["POST"])
+@csrf_exempt()
 @login_required
 @limiter.limit("3 per hour", key_func=get_user_id_from_user)
 def change_password():
@@ -233,6 +251,7 @@ def change_password():
 
 
 @auth.route("/update-profile", methods=["POST"])
+@csrf_exempt()
 @login_required
 @limiter.limit("20 per hour", key_func=get_user_id_from_user)
 def update_profile():
@@ -267,6 +286,7 @@ def update_profile():
 
 
 @auth.route("/update-settings", methods=["POST"])
+@csrf_exempt()
 @login_required
 @limiter.limit("20 per hour", key_func=get_user_id_from_user)
 def update_settings():
@@ -343,6 +363,7 @@ def get_settings():
 
 
 @auth.route("/refresh-token", methods=["POST"])
+@csrf_exempt()
 def refresh_token():
     """Refresh JWT token if user has been active and token is approaching expiration."""
     auth_header = request.headers.get("Authorization")

@@ -1,4 +1,4 @@
-from flask import Flask
+from flask import Flask, request, jsonify
 from flask_login import LoginManager, current_user
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -142,9 +142,25 @@ def create_app(config_name=None):
 
     # Initialize CSRF protection
     # Note: API endpoints using JWT cookies are exempt (cookies have SameSite protection)
-    from flask_wtf.csrf import CSRFProtect
+    from flask_wtf.csrf import CSRFProtect, CSRFError
 
-    csrf = CSRFProtect(app)
+    # Custom CSRFProtect that exempts API routes
+    class APIExemptCSRFProtect(CSRFProtect):
+        def protect(self):
+            # Skip CSRF for API routes - JWT cookies provide protection
+            if request.path.startswith('/api/'):
+                return
+            return super().protect()
+
+    csrf = APIExemptCSRFProtect(app)
+
+    # CSRF error handler - handle CSRF errors gracefully
+    @app.errorhandler(CSRFError)
+    def handle_csrf_error(e):
+        # For API routes, return JSON error instead of HTML
+        if request.path.startswith('/api/'):
+            return jsonify({"error": "CSRF validation failed"}), 400
+        return e
 
     # Initialize Flask-Talisman for security headers (FR-SEC-001)
     # Adds HSTS, X-Frame-Options, X-Content-Type-Options, CSP headers
