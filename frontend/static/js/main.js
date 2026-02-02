@@ -291,7 +291,7 @@ async function processFiles() {
         });
 
         // Send request
-        const response = await axios.post(`${window.API_BASE_URL}/upload`, formData, {
+        const response = await axios.post('/upload', formData, {
             headers: {
                 'Content-Type': 'multipart/form-data'
             },
@@ -572,7 +572,7 @@ function updateFileProgress(fileName, status, percent, type = 'success') {
 // Load user limits
 async function loadUserLimits() {
     try {
-        const response = await axios.get(`${window.API_BASE_URL}/limits`);
+        const response = await axios.get('/limits');
         userLimits = response.data;
         updateLimitsDisplay();
     } catch (error) {
@@ -609,7 +609,7 @@ function updateLimitsDisplay() {
 async function checkAuthStatus() {
     // JWT is now stored in HttpOnly cookie, sent automatically with requests
     try {
-        const response = await axios.get(`${window.API_BASE_URL}/auth/me`);
+        const response = await axios.get('/auth/me');
         currentUser = response.data.user;
         updateAuthUI(currentUser);
     } catch (error) {
@@ -770,7 +770,7 @@ async function handleLogin(event) {
     loginBtn.innerHTML = '<i class="fas fa-spinner animate-spin mr-2"></i>Logging in...';
 
     try {
-        const response = await axios.post(`${window.API_BASE_URL}/auth/login`, {
+        const response = await axios.post('/auth/login', {
             email: email,
             password: password,
             remember: remember
@@ -818,7 +818,7 @@ async function handleRegister(event) {
     registerBtn.innerHTML = '<i class="fas fa-spinner animate-spin mr-2"></i>Registering...';
 
     try {
-        const response = await axios.post(`${window.API_BASE_URL}/auth/register`, {
+        const response = await axios.post('/auth/register', {
             name: name,
             email: email,
             password: password
@@ -849,7 +849,7 @@ async function handleRegister(event) {
 async function logout() {
     try {
         // Logout clears the HttpOnly JWT cookie server-side
-        await axios.post(`${window.API_BASE_URL}/auth/logout`);
+        await axios.post('/auth/logout');
     } catch (error) {
         console.error('Logout error:', error);
     } finally {
@@ -894,7 +894,7 @@ async function handleChangePassword(event) {
 
     try {
         // JWT cookie is sent automatically
-        const response = await axios.post(`${window.API_BASE_URL}/auth/change-password`, {
+        const response = await axios.post('/auth/change-password', {
             current_password: currentPassword,
             new_password: newPassword
         });
@@ -915,7 +915,7 @@ async function handleChangePassword(event) {
 async function showUsageStats() {
     try {
         // JWT cookie is sent automatically
-        const response = await axios.get(`${window.API_BASE_URL}/usage-stats`);
+        const response = await axios.get('/usage-stats');
 
         const stats = response.data;
 
@@ -1227,7 +1227,7 @@ async function checkTokenRenewal() {
 
     try {
         // Refresh token if needed (server will check if within 30 minutes of expiration)
-        const response = await axios.post(`${window.API_BASE_URL}/auth/refresh-token`, {}, {
+        const response = await axios.post('/auth/refresh-token', {}, {
             headers: {
                 'Authorization': `Bearer ${token}`
             }
