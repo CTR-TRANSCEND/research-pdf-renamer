@@ -1,5 +1,5 @@
 from functools import wraps
-from flask import request, jsonify, current_app
+from flask import request, jsonify, current_app, g
 from flask_login import current_user
 from backend.models import User
 import jwt
@@ -21,6 +21,10 @@ def auth_required(f):
 
     @wraps(f)
     def decorated_function(*args, **kwargs):
+        # Fast path: session already authenticated for this request.
+        if current_user.is_authenticated:
+            return f(*args, **kwargs)
+
         # Use proper logging instead of print statements
         logger.debug(f"auth_required check for endpoint {request.endpoint}")
 
@@ -73,18 +77,24 @@ def auth_required(f):
                 logger.warning(
                     f"auth_required: JWT token expired (from {token_source}) - rejecting expired token"
                 )
+                # REQ-AUTH-003: Clear invalid JWT cookie on expiration
+                g.clear_jwt_cookie = True
                 return jsonify({"error": "Token expired. Please log in again."}), 401
             except jwt.InvalidTokenError as e:
                 # Catch all JWT-related errors (DecodeError, InvalidSignatureError, etc.)
                 logger.warning(
                     f"auth_required: Invalid JWT token: {type(e).__name__} from {token_source}"
                 )
+                # REQ-AUTH-003: Clear invalid JWT cookie on invalid token
+                g.clear_jwt_cookie = True
                 # Do NOT fall through to session - return 401 immediately
                 return jsonify({"error": "Invalid authentication token"}), 401
             except Exception as e:
                 logger.warning(
                     f"JWT decode error: {str(e)[:100]}"
                 )  # Limit error message length
+                # REQ-AUTH-003: Clear invalid JWT cookie on decode error
+                g.clear_jwt_cookie = True
                 return jsonify({"error": "Authentication failed"}), 401
 
         # Fallback: Check Flask-Login session (for compatibility and page routes)
@@ -117,14 +127,16 @@ def admin_required(f):
 
 
 def generate_token(user):
-    """Generate JWT token for API access with sliding expiration."""
+    """Generate JWT token for API access with inactivity-based expiration."""
+    now = datetime.datetime.utcnow()
+    inactivity_minutes = int(current_app.config.get("INACTIVITY_TIMEOUT_MINUTES", 30))
     payload = {
         "user_id": user.id,
         "email": user.email,
-        "exp": datetime.datetime.utcnow()
-        + datetime.timedelta(hours=24),  # 24 hours base expiration
-        "iat": datetime.datetime.utcnow(),  # Issued at time
-        "last_activity": datetime.datetime.utcnow().isoformat(),  # Track last activity
+        # Expire after inactivity timeout. Token is refreshed server-side on activity.
+        "exp": now + datetime.timedelta(minutes=inactivity_minutes),
+        "iat": now,  # Issued at time
+        "last_activity": now.isoformat(),  # Track last activity
     }
     return jwt.encode(payload, current_app.config["SECRET_KEY"], algorithm="HS256")
 
@@ -134,11 +146,13 @@ def set_jwt_cookie(response, user):
     token = generate_token(user)
     # Get cookie secure setting from config
     secure = current_app.config.get("SESSION_COOKIE_SECURE", False)
+    inactivity_minutes = int(current_app.config.get("INACTIVITY_TIMEOUT_MINUTES", 30))
+    max_age = inactivity_minutes * 60
     # Set HttpOnly cookie to prevent XSS access
     response.set_cookie(
         "jwt_token",
         token,
-        max_age=24 * 60 * 60,  # 24 hours
+        max_age=max_age,
         httponly=True,  # Prevent JavaScript access (critical for security)
         secure=secure,  # Only send over HTTPS in production
         samesite="Lax",  # CSRF protection
@@ -192,9 +206,15 @@ def refresh_token_if_needed(token):
             logger.debug("Token refresh rejected: maximum lifetime exceeded")
             return None  # Token too old, require re-authentication
 
-        # If token expires in less than 30 minutes, refresh it
+        # If token expires soon, refresh it.
+        # Keep this threshold smaller than the inactivity timeout so active users
+        # don't get logged out due to timing jitter.
+        inactivity_minutes = int(
+            current_app.config.get("INACTIVITY_TIMEOUT_MINUTES", 30)
+        )
+        refresh_threshold_seconds = min(5 * 60, max(60, inactivity_minutes * 60 // 3))
         time_until_expiration = (exp_time - now).total_seconds()
-        if time_until_expiration < 30 * 60:  # 30 minutes
+        if time_until_expiration < refresh_threshold_seconds:
             from backend.database import db
 
             user = db.session.get(User, payload["user_id"])
@@ -216,7 +236,7 @@ def refresh_token_if_needed(token):
             new_payload = {
                 "user_id": user.id,
                 "email": user.email,
-                "exp": now + datetime.timedelta(hours=24),
+                "exp": now + datetime.timedelta(minutes=inactivity_minutes),
                 "iat": now,
                 "last_activity": now.isoformat(),
             }

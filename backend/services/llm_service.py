@@ -12,6 +12,27 @@ from pydantic import BaseModel, Field, field_validator, ConfigDict
 logger = logging.getLogger(__name__)
 
 
+# PERF-004: Module-level shared HTTP client with connection pooling
+# Created once at module import and reused for all LLM service requests
+# This prevents creating new connections for each request
+_shared_http_client = None
+
+
+def get_shared_http_client():
+    """Get or create the shared HTTP client with connection pooling."""
+    global _shared_http_client
+    if _shared_http_client is None:
+        _shared_http_client = httpx.Client(
+            limits=httpx.Limits(
+                max_connections=10,  # Maximum concurrent connections
+                max_keepalive_connections=5,  # Maximum connections to keep alive
+            ),
+            timeout=30.0,  # Default timeout for requests
+        )
+        logger.info("Created shared HTTP client with connection pooling")
+    return _shared_http_client
+
+
 # QUAL-002 FIX: Add Pydantic schema for strict metadata validation
 class PaperMetadata(BaseModel):
     """Schema for validating LLM-extracted paper metadata."""
@@ -90,17 +111,14 @@ class LLMService:
         self.provider_url = self._load_provider_url()
 
         if self.provider == "openai":
-            # Create OpenAI client - simplified initialization for newer OpenAI library
+            # PERF-004: Use shared HTTP client with connection pooling
+            # This prevents creating new connections for each request
             try:
                 self.client = openai.OpenAI(api_key=self.api_key)
             except Exception:
                 # Fallback for older OpenAI library versions that might support proxies
-                http_client = httpx.Client(
-                    limits=httpx.Limits(
-                        max_connections=10, max_keepalive_connections=5
-                    ),
-                    timeout=30.0,
-                )
+                # Use shared HTTP client instead of creating a new one
+                http_client = get_shared_http_client()
                 self.client = openai.OpenAI(
                     api_key=self.api_key, http_client=http_client
                 )
@@ -392,7 +410,8 @@ class LLMService:
         headers: dict,
     ) -> Tuple[Optional[Dict], Optional[ExtractionError]]:
         """Extract metadata using OpenAI-compatible /v1/completions endpoint."""
-        import requests
+        # PERF-004: Use shared httpx client instead of requests
+        http_client = get_shared_http_client()
 
         base_url = ollama_url.rstrip("/")
         if base_url.endswith("/v1"):
@@ -413,8 +432,8 @@ class LLMService:
             max_tokens = 500
 
         try:
-            # Call OpenAI-compatible completions endpoint
-            response = requests.post(
+            # Call OpenAI-compatible completions endpoint using shared client
+            response = http_client.post(
                 f"{base_url}/v1/completions",
                 headers=headers,
                 json={
@@ -460,21 +479,24 @@ class LLMService:
 
             return metadata, None
 
-        except requests.exceptions.Timeout:
+        except httpx.TimeoutException:
             logger.error(
                 f"OpenAI-compatible request timeout after {self.request_timeout}s"
             )
             return None, ExtractionError.NETWORK_ERROR
-        except requests.exceptions.ConnectionError as e:
+        except httpx.NetworkError as e:
             logger.error(f"OpenAI-compatible connection error: {e}")
             return None, ExtractionError.SERVICE_UNAVAILABLE
-        except requests.exceptions.HTTPError as e:
+        except httpx.HTTPStatusError as e:
             logger.error(f"OpenAI-compatible HTTP error: {e.response.status_code}")
             if e.response.status_code == 404:
                 logger.error(
                     f"Model '{self.model}' not found or endpoint not supported. Server may be native Ollama."
                 )
                 return None, ExtractionError.SERVICE_UNAVAILABLE
+            return None, ExtractionError.API_ERROR
+        except httpx.HTTPError as e:
+            logger.error(f"OpenAI-compatible HTTP error: {e}")
             return None, ExtractionError.API_ERROR
 
     def _extract_ollama_native(
@@ -485,15 +507,16 @@ class LLMService:
         headers: dict,
     ) -> Tuple[Optional[Dict], Optional[ExtractionError]]:
         """Extract metadata using native Ollama /api/generate endpoint."""
-        import requests
+        # PERF-004: Use shared httpx client instead of requests
+        http_client = get_shared_http_client()
         import json
 
         # Create prompt
         prompt = self._create_prompt(text, user_preferences)
 
         try:
-            # Call Ollama generate API
-            response = requests.post(
+            # Call Ollama generate API using shared client
+            response = http_client.post(
                 f"{ollama_url}/api/generate",
                 headers=headers,
                 json={
@@ -541,17 +564,20 @@ class LLMService:
                 logger.debug(f"Response text: {response_text[:500]}")
                 return None, ExtractionError.INVALID_RESPONSE
 
-        except requests.exceptions.Timeout:
+        except httpx.TimeoutException:
             logger.error(f"Ollama request timeout after {self.request_timeout}s")
             return None, ExtractionError.NETWORK_ERROR
-        except requests.exceptions.ConnectionError as e:
+        except httpx.NetworkError as e:
             logger.error(f"Ollama connection error: {e}")
             return None, ExtractionError.SERVICE_UNAVAILABLE
-        except requests.exceptions.HTTPError as e:
+        except httpx.HTTPStatusError as e:
             logger.error(f"Ollama HTTP error: {e.response.status_code}")
             if e.response.status_code == 404:
                 logger.error(f"Model '{self.model}' not found on Ollama server")
                 return None, ExtractionError.SERVICE_UNAVAILABLE
+            return None, ExtractionError.API_ERROR
+        except httpx.HTTPError as e:
+            logger.error(f"Ollama HTTP error: {e}")
             return None, ExtractionError.API_ERROR
 
     def _create_prompt(self, text: str, user_preferences: Optional[Dict] = None) -> str:

@@ -1,7 +1,13 @@
 import ipaddress
+import os
 import re
 from typing import Tuple
 from urllib.parse import urlparse
+
+# SSRF Protection: Allow private IPs when explicitly configured
+# SECURITY: When enabled, allows internal network access for LLM servers
+# Use only in trusted environments where local LLM servers are required
+ALLOW_PRIVATE_IPS = os.environ.get("ALLOW_PRIVATE_IPS", "false").lower() == "true"
 
 try:
     from email_validator import validate_email as email_validator_validate
@@ -129,6 +135,7 @@ def validate_llm_server_url(url: str) -> Tuple[bool, str]:
             return False, "Hostname contains invalid characters"
 
         # SSRF Protection: Reject private IP addresses, loopback, and link-local addresses
+        # unless ALLOW_PRIVATE_IPS is explicitly enabled
         #
         # SECURITY NOTE: Loopback addresses (127.0.0.1, localhost) are explicitly allowed
         # because:
@@ -136,15 +143,16 @@ def validate_llm_server_url(url: str) -> Tuple[bool, str]:
         # 2. Local LLM servers (Ollama, LM Studio) commonly run on localhost
         # 3. This is not user-controlled input - only admins can set these URLs
         #
-        # For multi-tenant deployments or environments where local LLM servers are
-        # not used, consider adding ALLOW_LOOPBACK configuration option.
+        # For environments where private IPs are required, set ALLOW_PRIVATE_IPS=true
         try:
             ip = ipaddress.ip_address(hostname)
-            if ip.is_private or ip.is_link_local or ip.is_reserved:
-                return (
-                    False,
-                    "Private IP addresses and link-local addresses are not allowed for security reasons",
-                )
+            if not ALLOW_PRIVATE_IPS:
+                if ip.is_private or ip.is_link_local or ip.is_reserved:
+                    return (
+                        False,
+                        "Private IP addresses and link-local addresses are not allowed for security reasons. "
+                        "Set ALLOW_PRIVATE_IPS=true to enable.",
+                    )
             # Allow loopback (localhost, 127.0.0.1) for local LLM server development
             # This is intentional as LLM servers often run locally
         except ValueError:

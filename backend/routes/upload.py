@@ -14,6 +14,12 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 upload = Blueprint("upload", __name__)
 logger = logging.getLogger(__name__)
 
+# PERF-002: Module-level shared thread pool for file processing
+# Bounded by CPU count to prevent resource exhaustion
+# Created once at module import instead of per-request
+MAX_WORKERS = min(os.cpu_count() or 4, 4)
+_file_processor_pool = ThreadPoolExecutor(max_workers=MAX_WORKERS, thread_name_prefix="file_processor")
+
 # Initialize services (lazy initialization to avoid config issues)
 pdf_processor = None
 llm_service = None
@@ -80,10 +86,9 @@ def upload_files():
                 {"error": f"Too many files. Maximum allowed: {max_files}"}
             ), 400
 
-        # Use ThreadPoolExecutor for parallel processing
-        max_workers = min(
-            len(files), 4
-        )  # Limit to 4 workers to avoid overwhelming system
+        # PERF-002: Use shared thread pool for file processing
+        # The module-level _file_processor_pool is bounded by CPU count
+        # This prevents resource exhaustion from creating new threads per request
         processed_files = []
         errors = []
 
@@ -194,27 +199,26 @@ def upload_files():
             path = paths[i] if paths and i < len(paths) else file.filename
             file_args.append((i, file, path))
 
-        # Process files in parallel
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            # Submit all tasks
-            future_to_file = {
-                executor.submit(process_single_file, args): args[
-                    2
-                ]  # args[2] is the original path
-                for args in file_args
-            }
+        # PERF-002: Process files in parallel using shared thread pool
+        # Submit all tasks to the shared pool instead of creating a new one
+        future_to_file = {
+            _file_processor_pool.submit(process_single_file, args): args[
+                2
+            ]  # args[2] is the original path
+            for args in file_args
+        }
 
-            # Collect results as they complete
-            for future in as_completed(future_to_file):
-                try:
-                    result, file_info, filepath, error = future.result()
-                    if result == "success":
-                        processed_files.append(file_info)
-                    else:
-                        errors.append(error)
-                except Exception as e:
-                    path = future_to_file[future]
-                    errors.append(f"{path}: Processing error - {str(e)}")
+        # Collect results as they complete
+        for future in as_completed(future_to_file):
+            try:
+                result, file_info, filepath, error = future.result()
+                if result == "success":
+                    processed_files.append(file_info)
+                else:
+                    errors.append(error)
+            except Exception as e:
+                path = future_to_file[future]
+                errors.append(f"{path}: Processing error - {str(e)}")
 
         # Return results
         if not processed_files and errors:

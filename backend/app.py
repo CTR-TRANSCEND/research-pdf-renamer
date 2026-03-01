@@ -1,5 +1,5 @@
-from flask import Flask, request, jsonify
-from flask_login import LoginManager, current_user
+from flask import Flask, request, jsonify, session, g
+from flask_login import LoginManager, current_user, login_user, logout_user
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from backend.config import config
@@ -7,6 +7,8 @@ from backend.database import db
 from backend.models import User, SystemSettings
 from werkzeug.middleware.proxy_fix import ProxyFix
 import os
+import jwt
+from datetime import datetime, timedelta
 
 
 def get_user_id_from_user():
@@ -131,7 +133,9 @@ def create_app(config_name=None):
     # 2. ProxyFix: Handles X-Forwarded headers for reverse proxy
     application_root = app.config.get("APPLICATION_ROOT", "")
     app.wsgi_app = ApplicationRootMiddleware(app.wsgi_app, application_root)
-    app.wsgi_app = ProxyFix(app.wsgi_app, x_prefix=1)
+    app.wsgi_app = ProxyFix(
+        app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1, x_prefix=1
+    )
 
     # Initialize extensions with engine options
     db.init_app(app)
@@ -141,18 +145,38 @@ def create_app(config_name=None):
     login_manager.login_message = "Please log in to access this page."
 
     # Initialize CSRF protection
-    # Note: API endpoints using JWT cookies are exempt (cookies have SameSite protection)
+    # DEPLOY-002: Require CSRF for state-changing endpoints while allowing read-only GET
+    # Note: Login/register/logout remain exempt (JWT cookies + session protection)
+    # State-changing endpoints (change-password, update-profile, admin actions) require CSRF
     from flask_wtf.csrf import CSRFProtect, CSRFError
 
-    # Custom CSRFProtect that exempts API routes
-    class APIExemptCSRFProtect(CSRFProtect):
+    # Custom CSRFProtect that selectively enforces CSRF based on endpoint
+    class SelectiveCSRFProtect(CSRFProtect):
         def protect(self):
-            # Skip CSRF for API routes - JWT cookies provide protection
-            if request.path.startswith('/api/'):
-                return
-            return super().protect()
+            # Exempt login/register/logout - they use JWT cookies and session auth
+            exempt_paths = (
+                '/api/auth/login',
+                '/api/auth/register',
+                '/api/auth/logout',
+                '/api/auth/refresh-token',
+                '/api/auth/me',  # GET - read-only
+                '/api/auth/settings',  # GET - read-only
+            )
 
-    csrf = APIExemptCSRFProtect(app)
+            # Exempt file upload endpoints - multipart/form-data with JWT auth
+            if request.path.startswith('/api/upload') or request.path.startswith('/api/download'):
+                return
+
+            # Check if path is in exempt list
+            if request.path in exempt_paths or request.path.startswith('/api/auth/login'):
+                return
+
+            # For state-changing endpoints (POST/PUT/DELETE), enforce CSRF
+            # Read-only GET requests are allowed without CSRF token
+            if request.method in ('POST', 'PUT', 'DELETE', 'PATCH'):
+                return super().protect()
+
+    csrf = SelectiveCSRFProtect(app)
 
     # CSRF error handler - handle CSRF errors gracefully
     @app.errorhandler(CSRFError)
@@ -166,21 +190,22 @@ def create_app(config_name=None):
     # Adds HSTS, X-Frame-Options, X-Content-Type-Options, CSP headers
     from flask_talisman import Talisman
 
-    # Determine if HTTPS enforcement should be enabled
-    # Development/Testing: force_https=False allows HTTP on localhost
-    # Production: force_https=True enforces HTTPS redirects
-    flask_env = os.environ.get("FLASK_ENV", "production")
-    force_https = flask_env not in ["development", "testing"]
+    # Determine if HTTPS enforcement should be enabled.
+    # Use the app config/debug flags rather than raw env vars to avoid
+    # mismatches (e.g., FLASK_ENV unset => dev config but prod Talisman).
+    force_https = not (app.debug or app.testing)
+    cookie_secure = force_https or bool(app.config.get("SESSION_COOKIE_SECURE", False))
+    cookie_samesite = app.config.get("SESSION_COOKIE_SAMESITE", "Lax")
 
     Talisman(
         app,
         force_https=force_https,
-        strict_transport_security=True,
-        strict_transport_security_preload=True,
-        strict_transport_security_max_age=31536000,
-        session_cookie_secure=True,
-        session_cookie_http_only=True,
-        session_cookie_samesite="Lax",
+        strict_transport_security=force_https,
+        strict_transport_security_preload=force_https,
+        strict_transport_security_max_age=31536000 if force_https else 0,
+        session_cookie_secure=cookie_secure,
+        session_cookie_http_only=bool(app.config.get("SESSION_COOKIE_HTTPONLY", True)),
+        session_cookie_samesite=cookie_samesite,
         content_security_policy={
             "default-src": "'self'",
             "img-src": "'self' data: https:",
@@ -221,6 +246,10 @@ def create_app(config_name=None):
         strategy="fixed-window",
     )
 
+    # PERF-001: Export limiter for use in blueprints
+    # Blueprints can import this limiter from backend.app
+    app.limiter = limiter
+
     # Initialize database monitoring middleware in production
     if not app.debug:
         from backend.middleware.db_monitor import DatabaseMonitorMiddleware
@@ -230,6 +259,102 @@ def create_app(config_name=None):
     @login_manager.user_loader
     def load_user(user_id):
         return db.session.get(User, int(user_id))
+
+    from backend.utils.auth import get_jwt_from_cookie, set_jwt_cookie, clear_jwt_cookie
+
+    @app.before_request
+    def _sync_auth_from_jwt_and_enforce_inactivity():
+        """
+        Keep Flask-Login session and JWT cookie in sync and enforce inactivity.
+
+        Why:
+        - `/admin` uses Flask-Login session (`@login_required`)
+        - API endpoints primarily use `jwt_token` HttpOnly cookie
+        - Running behind a reverse proxy (and/or on plain HTTP in dev) can make
+          session cookies appear "unstable" unless we keep auth sources aligned.
+        """
+        # Skip static files
+        if request.endpoint == "static":
+            return None
+
+        now = datetime.utcnow()
+        inactivity_minutes = int(app.config.get("INACTIVITY_TIMEOUT_MINUTES", 30))
+        inactivity_delta = timedelta(minutes=inactivity_minutes)
+
+        # Enforce inactivity for existing session-based auth
+        if current_user.is_authenticated:
+            last_activity_raw = session.get("last_activity")
+            if last_activity_raw:
+                try:
+                    last_activity = datetime.fromisoformat(last_activity_raw)
+                except ValueError:
+                    last_activity = None
+            else:
+                last_activity = None
+
+            if last_activity and (now - last_activity) > inactivity_delta:
+                logout_user()
+                session.clear()
+                g.clear_jwt_cookie = True
+                return None
+
+            session.permanent = True
+            session["last_activity"] = now.isoformat()
+            session.modified = True
+            if get_jwt_from_cookie():
+                g.refresh_jwt_cookie = True
+            return None
+
+        # No authenticated session: try to authenticate from JWT cookie.
+        token = get_jwt_from_cookie()
+        if not token:
+            return None
+
+        try:
+            payload = jwt.decode(token, app.config["SECRET_KEY"], algorithms=["HS256"])
+        except jwt.ExpiredSignatureError:
+            g.clear_jwt_cookie = True
+            return None
+        except jwt.InvalidTokenError:
+            g.clear_jwt_cookie = True
+            return None
+        except Exception:
+            g.clear_jwt_cookie = True
+            return None
+
+        user_id = payload.get("user_id")
+        if not user_id:
+            g.clear_jwt_cookie = True
+            return None
+
+        user = db.session.get(User, int(user_id))
+        if not user or not user.is_approved or not user.is_active or user.deactivated_at:
+            g.clear_jwt_cookie = True
+            return None
+
+        # Authenticate this request via Flask-Login so `@login_required` routes work.
+        login_user(user, remember=False)
+        session.permanent = True
+        session["last_activity"] = now.isoformat()
+        session.modified = True
+        g.refresh_jwt_cookie = True
+        return None
+
+    @app.after_request
+    def _refresh_or_clear_jwt_cookie(response):
+        """
+        Clear expired/invalid JWT cookies and refresh JWT expiry on activity.
+
+        Refreshing on activity provides "expires after 30 minutes inactivity"
+        semantics without relying on client-side timers.
+        """
+        if getattr(g, "clear_jwt_cookie", False):
+            clear_jwt_cookie(response)
+            return response
+
+        if getattr(g, "refresh_jwt_cookie", False) and current_user.is_authenticated:
+            set_jwt_cookie(response, current_user)
+        return response
 
     # Register blueprints
     from backend.routes.main import main as main_blueprint

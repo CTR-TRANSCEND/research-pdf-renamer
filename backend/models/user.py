@@ -49,8 +49,8 @@ class User(UserMixin, db.Model):
         return 30 if self.is_approved else 5
 
     def is_user_active(self):
-        """Check if user is active (both approved and not deactivated)."""
-        return self.is_approved and self.is_active
+        """Check if user is active (approved, active, and not deactivated)."""
+        return self.is_approved and self.is_active and self.deactivated_at is None
 
     def __repr__(self):
         return f'<User {self.email}>'

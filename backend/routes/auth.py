@@ -13,6 +13,7 @@ from backend.utils.auth import (
 )
 from datetime import datetime
 from flask_wtf.csrf import CSRFError
+from functools import wraps
 
 
 def csrf_exempt():
@@ -27,13 +28,6 @@ def is_csrf_exempt(view):
     """Check if a view is exempt from CSRF protection."""
     return getattr(view, 'csrf_exempt', False)
 
-# Initialize limiter for this blueprint
-limiter = Limiter(
-    key_func=get_remote_address,
-    storage_uri="memory://",
-    strategy="fixed-window",
-)
-
 
 def get_user_id_from_user():
     """Key function for user-based rate limiting on authenticated endpoints."""
@@ -45,9 +39,18 @@ def get_user_id_from_user():
 auth = Blueprint("auth", __name__)
 
 
+# PERF-001: Rate limiter for auth routes
+# Using Flask-Limiter's standard pattern for blueprint-level rate limiting
+limiter = Limiter(
+    key_func=get_remote_address,
+    storage_uri="memory://",
+    strategy="fixed-window",
+)
+
+
 @auth.route("/register", methods=["POST"])
 @csrf_exempt()
-@limiter.limit("5 per hour", key_func=get_remote_address)
+@limiter.limit("5 per hour")
 def register():
     """Register a new user."""
     data = request.get_json()
@@ -133,7 +136,7 @@ def login_page():
 
 @auth.route("/login", methods=["POST"])
 @csrf_exempt()
-@limiter.limit("10 per minute", key_func=get_remote_address)
+@limiter.limit("10 per minute")
 def login():
     """Login existing user and set JWT in HttpOnly cookie."""
     data = request.get_json()
@@ -146,7 +149,7 @@ def login():
     user = User.query.filter_by(email=email).first()
 
     if user and user.check_password(password):
-        # SEC-001 FIX: Check if user is approved before allowing login
+        # REQ-AUTH-001: Check user status fields before allowing login
         # Unapproved users cannot obtain JWT tokens or access protected resources
         if not user.is_approved:
             return jsonify(
@@ -156,11 +159,32 @@ def login():
                 }
             ), 403
 
+        # Check if user is active (not soft-deleted)
+        if not user.is_active:
+            return jsonify(
+                {
+                    "error": "Account has been deactivated",
+                    "message": "Your account has been deactivated. Please contact an administrator.",
+                }
+            ), 403
+
+        # Check if user has been deactivated (deactivated_at timestamp set)
+        if user.deactivated_at is not None:
+            return jsonify(
+                {
+                    "error": "Account has been deactivated",
+                    "message": "Your account has been deactivated. Please contact an administrator.",
+                }
+            ), 403
+
         # Security: Regenerate session to prevent session fixation attacks
         # Clear old session data so Flask-Login creates a fresh session
         session.clear()
 
         login_user(user, remember=data.get("remember", False))
+        # Enable inactivity-based expiration for the Flask session cookie
+        session.permanent = True
+        session["last_activity"] = datetime.utcnow().isoformat()
         user.last_login = datetime.utcnow()
         db.session.commit()
 
@@ -189,14 +213,27 @@ def login():
 
 @auth.route("/logout", methods=["POST"])
 @csrf_exempt()
-@login_required
 def logout():
     """Logout current user and clear JWT cookie."""
-    logout_user()
+    try:
+        logout_user()
+    except Exception:
+        # Logout should be best-effort; still clear cookies below
+        pass
+    session.clear()
 
     # Clear JWT cookie
     response = make_response(jsonify({"message": "Logged out successfully"}))
     clear_jwt_cookie(response)
+    # Also clear Flask session and remember cookies to prevent "sticky" logins.
+    response.delete_cookie(
+        current_app.config.get("SESSION_COOKIE_NAME", "session"),
+        path=current_app.config.get("SESSION_COOKIE_PATH", "/"),
+    )
+    response.delete_cookie(
+        current_app.config.get("REMEMBER_COOKIE_NAME", "remember_token"),
+        path=current_app.config.get("REMEMBER_COOKIE_PATH", "/"),
+    )
     return response
 
 
@@ -222,11 +259,10 @@ def get_current_user():
 
 
 @auth.route("/change-password", methods=["POST"])
-@csrf_exempt()
 @login_required
 @limiter.limit("3 per hour", key_func=get_user_id_from_user)
 def change_password():
-    """Change user password."""
+    """Change user password. CSRF token required for security."""
     data = request.get_json()
     current_password = data.get("current_password", "")
     new_password = data.get("new_password", "")
@@ -251,11 +287,10 @@ def change_password():
 
 
 @auth.route("/update-profile", methods=["POST"])
-@csrf_exempt()
 @login_required
 @limiter.limit("20 per hour", key_func=get_user_id_from_user)
 def update_profile():
-    """Update user profile information."""
+    """Update user profile information. CSRF token required for security."""
     data = request.get_json()
     name = data.get("name", "").strip()
 
@@ -286,11 +321,10 @@ def update_profile():
 
 
 @auth.route("/update-settings", methods=["POST"])
-@csrf_exempt()
 @login_required
 @limiter.limit("20 per hour", key_func=get_user_id_from_user)
 def update_settings():
-    """Update user preferences."""
+    """Update user preferences. CSRF token required for security."""
     data = request.get_json()
 
     # Get settings

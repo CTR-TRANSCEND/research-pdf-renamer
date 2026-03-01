@@ -1,9 +1,0 @@
-project:
-  name: ResearchPDFFileRenamerGLM/
-  description: AI-powered research PDF file renaming web application
-  type: web_browser_app
-  locale: en_US
-  created_at: '2026-01-13T09:54:21.673146Z'
-  initialized: 'true'
-github:
-  profile_name: windysky
