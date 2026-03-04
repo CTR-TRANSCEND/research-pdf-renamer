@@ -479,6 +479,14 @@
                 formatItemsContainer.insertBefore(draggingItem, afterElement);
             }
         });
+
+        // Event delegation for remove buttons (avoids inline onclick)
+        formatItemsContainer.addEventListener('click', (e) => {
+            const btn = e.target.closest('[data-action="removeFormatItem"]');
+            if (btn) {
+                removeFormatItem(btn.dataset.itemId);
+            }
+        });
     }
 
     // Add item to format
@@ -515,7 +523,7 @@
                 <i class="fas fa-grip-vertical mr-2 text-gray-400"></i>
                 ${item.display}
             </div>
-            <button type="button" onclick="removeFormatItem('${item.id}')" class="text-red-500 hover:text-red-700 transition">
+            <button type="button" data-action="removeFormatItem" data-item-id="${item.id}" class="text-red-500 hover:text-red-700 transition">
                 <i class="fas fa-times"></i>
             </button>
         `;
@@ -586,7 +594,7 @@
             const tagText = input.value.trim();
             if (tagText) {
                 const componentType = 'custom_' + Date.now();
-                const componentHTML = `<i class="fas fa-tag mr-1 text-indigo-500"></i>${tagText}`;
+                const componentHTML = `<i class="fas fa-tag mr-1 text-indigo-500"></i>${escapeHtml(tagText)}`;
                 addFormatItem(componentType, componentHTML);
                 input.value = '';
             }
@@ -640,7 +648,7 @@
             } else {
                 // It's a custom tag
                 componentType = 'custom_' + Date.now() + Math.random();
-                componentHTML = `<i class="fas fa-tag mr-1 text-indigo-500"></i>${part}`;
+                componentHTML = `<i class="fas fa-tag mr-1 text-indigo-500"></i>${escapeHtml(part)}`;
             }
 
             if (componentHTML) {
@@ -677,7 +685,8 @@
             // Generate format string
             const formatParts = formatItems.map(item => {
                 if (item.type.startsWith('custom_')) {
-                    return item.display.match(/>([^<]+)</)[1].trim();
+                    const match = item.display.match(/>([^<]+)</);
+                    return match ? match[1].trim() : item.type;
                 }
                 return `{${item.type}}`;
             });

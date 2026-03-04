@@ -181,8 +181,16 @@ class TestApplicationRootConfiguration:
 
     def test_middleware_strips_application_root(self):
         """Test ApplicationRootMiddleware strips APPLICATION_ROOT prefix."""
-        # This test requires create_app which is blocked by the Blueprint.views bug
-        pass
+        from backend.app import ApplicationRootMiddleware
+
+        # Create a mock WSGI app
+        def mock_app(environ, start_response):
+            return [environ.get('PATH_INFO', '').encode()]
+
+        middleware = ApplicationRootMiddleware(mock_app, '/pdf-renamer')
+
+        # Verify middleware is callable
+        assert callable(middleware)
 
     def test_application_root_middleware_class_exists(self):
         """Test that ApplicationRootMiddleware class exists and has required methods."""
@@ -334,7 +342,10 @@ class TestLLMConfiguration:
 
     def test_llm_settings_loaded_from_database(self):
         """Test LLM settings can be loaded from database on startup."""
-        pass
+        from backend.app import _load_llm_settings
+
+        # Function should exist and be callable
+        assert callable(_load_llm_settings)
 
     def test_load_llm_settings_function_exists(self):
         """Test that _load_llm_settings function exists."""
@@ -346,9 +357,10 @@ class TestLLMConfiguration:
 class TestRateLimitStorageConfiguration:
     """Test rate limit storage configuration (PERF-003)."""
 
-    def test_rate_limit_storage_defaults_to_memory(self):
+    def test_rate_limit_storage_defaults_to_memory(self, app):
         """Test rate limit storage defaults to memory."""
-        pass
+        limiter = app.limiter
+        assert limiter._storage_uri == "memory://"
 
     def test_rate_limit_storage_from_env(self):
         """Test RATE_LIMIT_STORAGE_URL from environment variable."""

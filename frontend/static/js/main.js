@@ -1251,52 +1251,11 @@ async function handleInactivityTimeout() {
     }
 }
 
-// Auto-renewal for approaching token expiration
-async function checkTokenRenewal() {
-    const token = localStorage.getItem('auth_token');
-    if (!token) return;
-
-    try {
-        // Refresh token if needed (server will check if within 30 minutes of expiration)
-        const response = await axios.post('auth/refresh-token', {}, {
-            headers: {
-                'Authorization': `Bearer ${token}`
-            }
-        });
-
-        if (response.data.token) {
-            // Update stored token with refreshed one
-            localStorage.setItem('auth_token', response.data.token);
-
-            // Update axios default header
-            axios.defaults.headers.common['Authorization'] = `Bearer ${response.data.token}`;
-
-            console.log('Token refreshed successfully');
-        }
-    } catch (error) {
-        console.log('Token refresh failed or not needed:', error.response?.data?.error || error.message);
-
-        // If refresh fails due to authentication error, user may need to log in again
-        if (error.response?.status === 401) {
-            console.log('Token refresh failed - authentication required');
-            showToast('Your session has expired. Please log in again.', 'warning');
-        }
-    }
-}
-
 // Initialize inactivity tracking when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
     // Wait a short delay to ensure auth status is loaded
     setTimeout(() => {
         initializeInactivityTracking();
-
-        // ============================================================
-        // DISABLED: Token Refresh Auto-Renewal (2024-01-15)
-        // Reason: Causing API spam and authentication issues
-        // Status: Intentionally disabled - not a bug
-        // TODO: Re-evaluate if rate limiting is implemented
-        // ============================================================
-        // setInterval(checkTokenRenewal, 10 * 60 * 1000);
     }, 1000);
 });
 

@@ -303,6 +303,7 @@ def upload_files():
 
 
 @upload.route("/download/<path:filepath>")
+@auth_required
 def download_file(filepath):
     """
     Download processed file.
