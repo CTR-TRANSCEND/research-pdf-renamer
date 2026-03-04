@@ -1,6 +1,6 @@
 # Research PDF File Renamer
 
-**Version 0.2.1** | A web application that automatically renames academic/research PDF files using AI-powered metadata extraction.
+**Version 0.2.2** | A web application that automatically renames academic/research PDF files using AI-powered metadata extraction.
 
 ## Features
 
@@ -13,6 +13,27 @@
 - **Usage Limits** - Anonymous users: 5 files × 5/year; Registered users: 30 files unlimited
 - **Admin Panel** - Complete admin dashboard for user management, LLM settings, and system monitoring
 - **Apache Reverse Proxy** - Production-ready deployment with Apache + SSL support
+
+## What's New in v0.2.2
+
+### Security Hardening (SPEC-SEC-003, SPEC-SEC-004, SPEC-TEST-001)
+
+**Frontend XSS Prevention (SPEC-SEC-003):**
+- Converted inline `onclick` handlers to data-attribute-driven event listeners
+- Applied `escapeHtml()` to all error message injection paths
+
+**Backend Security (SPEC-SEC-004):**
+- CSRF protection enforced for all cookie-authenticated state-changing endpoints
+- `password_confirm` field added to change-password flow
+- Error responses sanitized to avoid leaking internal details
+- LLM server URL validation strengthened against SSRF
+
+**Test Quality (SPEC-TEST-001):**
+- `conftest.py` fixture cleanup (no leaked state between tests)
+- JWT assertion corrected in auth test suite
+- Stub test implementations replaced with real assertions
+
+All 198 tests passing. Commit dab6c91.
 
 ## What's New in v0.2.1
 
@@ -383,4 +404,4 @@ MIT License
 
 ---
 
-**Version 0.2.1** - Released January 14, 2025
+**Version 0.2.2** - Released March 3, 2026
