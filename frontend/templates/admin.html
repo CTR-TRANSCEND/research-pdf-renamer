@@ -393,11 +393,11 @@
 </div>
 
 <!-- Change Password Modal -->
-<div id="change-password-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-40">
+<div id="change-password-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-40" role="dialog" aria-modal="true" aria-labelledby="admin-change-password-title">
     <div class="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
         <div class="p-6">
             <div class="flex justify-between items-center mb-4">
-                <h2 class="text-2xl font-bold text-gray-900">
+                <h2 id="admin-change-password-title" class="text-2xl font-bold text-gray-900">
                     <i class="fas fa-key mr-2"></i>Change Password
                 </h2>
                 <button onclick="closeChangePasswordModal()" class="text-gray-500 hover:text-gray-700">
@@ -439,11 +439,11 @@
 </div>
 
 <!-- Usage Stats Modal -->
-<div id="usage-stats-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-40">
+<div id="usage-stats-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-40" role="dialog" aria-modal="true" aria-labelledby="admin-usage-stats-title">
     <div class="bg-white rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[80vh] overflow-y-auto">
         <div class="p-6">
             <div class="flex justify-between items-center mb-6">
-                <h2 class="text-2xl font-bold text-gray-900">
+                <h2 id="admin-usage-stats-title" class="text-2xl font-bold text-gray-900">
                     <i class="fas fa-chart-bar mr-2"></i>Usage Statistics
                 </h2>
                 <button onclick="closeUsageStatsModal()" class="text-gray-500 hover:text-gray-700">
@@ -461,11 +461,11 @@
 </div>
 
 <!-- Edit User Limit Modal -->
-<div id="edit-user-limit-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-40">
+<div id="edit-user-limit-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-40" role="dialog" aria-modal="true" aria-labelledby="admin-edit-limit-title">
     <div class="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
         <div class="p-6">
             <div class="flex justify-between items-center mb-4">
-                <h2 class="text-2xl font-bold text-gray-900">
+                <h2 id="admin-edit-limit-title" class="text-2xl font-bold text-gray-900">
                     <i class="fas fa-file mr-2"></i>Edit User File Limit
                 </h2>
                 <button onclick="closeEditUserLimitModal()" class="text-gray-500 hover:text-gray-700">
@@ -513,9 +513,19 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
 <script>
     console.log('[ADMIN PAGE] Script loaded!');
+
+    // HTML escaping utility to prevent XSS
+    function escapeHtml(str) {
+        if (str === null || str === undefined) return '';
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
 
     // Base URL for navigation (matches APPLICATION_ROOT)
     const BASE_URL = '{{ url_for("main.index") }}'.replace(/\/$/, '') || '';
@@ -535,18 +545,18 @@
 
         // Get current user info and update navigation
         try {
-            const response = await axios.get('/auth/me');
+            const response = await axios.get('auth/me');
             adminUserData = response.data.user;
             updateAuthUI(adminUserData);
         } catch (error) {
             console.error('Error fetching user info:', error);
-            window.location.href = '/';
+            window.location.href = BASE_URL + '/';
             return;
         }
 
         // Check if user is admin
         if (!adminUserData.is_admin) {
-            window.location.href = '/';
+            window.location.href = BASE_URL + '/';
             return;
         }
 
@@ -563,7 +573,7 @@
         if (user) {
             authSection.innerHTML = `
                 <div class="relative">
-                    <span class="text-sm text-gray-700">Welcome, <span class="font-semibold">${user.name}</span></span>
+                    <span class="text-sm text-gray-700">Welcome, <span class="font-semibold">${escapeHtml(user.name)}</span></span>
                     ${!user.is_approved ? '<span class="ml-2 px-2 py-1 text-xs bg-yellow-100 text-yellow-800 rounded-full">Pending Approval</span>' : ''}
                     <button onclick="toggleUserMenu(event)" class="ml-2 text-gray-700 hover:text-indigo-600">
                         <i class="fas fa-user-circle text-xl"></i>
@@ -572,13 +582,7 @@
             `;
         } else {
             authSection.innerHTML = `
-                <a href="/" class="text-gray-700 hover:text-indigo-600 px-3 py-2 rounded-md text-sm font-medium">Home</a>
-                <button onclick="showLoginModal()" class="text-gray-700 hover:text-indigo-600 px-3 py-2 rounded-md text-sm font-medium">
-                    Login
-                </button>
-                <button onclick="showRegisterModal()" class="bg-indigo-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-indigo-700">
-                    Register
-                </button>
+                <a href="{{ url_for('main.index') }}" class="text-gray-700 hover:text-indigo-600 px-3 py-2 rounded-md text-sm font-medium">Login</a>
             `;
         }
     }
@@ -677,11 +681,11 @@
             const activityHtml = stats.recent_activity.map(activity => `
                 <div class="flex justify-between items-center p-3 bg-gray-50 rounded">
                     <div>
-                        <p class="text-sm font-medium">${activity.type}</p>
-                        <p class="text-xs text-gray-500">${activity.description}</p>
+                        <p class="text-sm font-medium">${escapeHtml(activity.type)}</p>
+                        <p class="text-xs text-gray-500">${escapeHtml(activity.description)}</p>
                     </div>
                     <div class="text-right">
-                        <p class="text-sm text-gray-600">${activity.details}</p>
+                        <p class="text-sm text-gray-600">${escapeHtml(activity.details)}</p>
                         <p class="text-xs text-gray-500">${new Date(activity.timestamp).toLocaleDateString()}</p>
                     </div>
                 </div>
@@ -691,11 +695,11 @@
             const finalHtml = activityHtml || (stats.top_users.length > 0 ? stats.top_users.map(user => `
                 <div class="flex justify-between items-center p-3 bg-gray-50 rounded">
                     <div>
-                        <p class="text-sm font-medium">${user.name}</p>
-                        <p class="text-xs text-gray-500">${user.email}</p>
+                        <p class="text-sm font-medium">${escapeHtml(user.name)}</p>
+                        <p class="text-xs text-gray-500">${escapeHtml(user.email)}</p>
                     </div>
                     <div class="text-right">
-                        <p class="text-sm font-medium text-green-600">${user.files_processed} files</p>
+                        <p class="text-sm font-medium text-green-600">${escapeHtml(user.files_processed)} files</p>
                         <p class="text-xs text-gray-500">Top user this month</p>
                     </div>
                 </div>
@@ -750,8 +754,8 @@
                 <tr>
                     <td class="px-6 py-4 whitespace-nowrap">
                         <div>
-                            <div class="text-sm font-medium text-gray-900">${user.name || 'Unknown'}</div>
-                            <div class="text-sm text-gray-500">${user.email}</div>
+                            <div class="text-sm font-medium text-gray-900">${escapeHtml(user.name || 'Unknown')}</div>
+                            <div class="text-sm text-gray-500">${escapeHtml(user.email)}</div>
                         </div>
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap">
@@ -770,12 +774,12 @@
                         ${user.last_login ? new Date(user.last_login).toLocaleDateString() : 'Never'}
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        <div>${user.usage_stats.total_files_processed} files</div>
-                        <div class="text-xs text-gray-400">${user.usage_stats.total_submissions} submissions</div>
+                        <div>${escapeHtml(user.usage_stats.total_files_processed)} files</div>
+                        <div class="text-xs text-gray-400">${escapeHtml(user.usage_stats.total_submissions)} submissions</div>
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         <div class="flex items-center space-x-2">
-                            <span>${user.preferences?.max_files_per_session || user.usage_stats?.max_files_per_submission || 'Default'}</span>
+                            <span>${escapeHtml(user.preferences?.max_files_per_session || user.usage_stats?.max_files_per_submission || 'Default')}</span>
                             <button onclick="editUserLimit(${user.id}, '${user.email}', ${user.preferences?.max_files_per_session || user.usage_stats?.max_files_per_submission || 'null'})"
                                     class="text-indigo-600 hover:text-indigo-900 text-xs">
                                 <i class="fas fa-edit"></i>
@@ -825,8 +829,8 @@
             listContainer.innerHTML = users.map(user => `
                 <div class="p-6 flex justify-between items-center">
                     <div>
-                        <h4 class="text-lg font-medium text-gray-900">${user.name || 'Unknown'}</h4>
-                        <p class="text-sm text-gray-600">${user.email}</p>
+                        <h4 class="text-lg font-medium text-gray-900">${escapeHtml(user.name || 'Unknown')}</h4>
+                        <p class="text-sm text-gray-600">${escapeHtml(user.email)}</p>
                         <p class="text-xs text-gray-500 mt-1">Joined: ${new Date(user.created_at).toLocaleDateString()}</p>
                     </div>
                     <div class="flex space-x-3">
@@ -1743,15 +1747,15 @@
             statsContent.innerHTML = `
                 <div class="grid md:grid-cols-3 gap-4">
                     <div class="text-center p-4 bg-blue-50 rounded-lg">
-                        <div class="text-3xl font-bold text-blue-600">${stats.total_submissions}</div>
+                        <div class="text-3xl font-bold text-blue-600">${escapeHtml(stats.total_submissions)}</div>
                         <div class="text-sm text-gray-600 mt-1">Total Submissions</div>
                     </div>
                     <div class="text-center p-4 bg-green-50 rounded-lg">
-                        <div class="text-3xl font-bold text-green-600">${stats.total_files_processed}</div>
+                        <div class="text-3xl font-bold text-green-600">${escapeHtml(stats.total_files_processed)}</div>
                         <div class="text-sm text-gray-600 mt-1">Files Processed</div>
                     </div>
                     <div class="text-center p-4 bg-purple-50 rounded-lg">
-                        <div class="text-3xl font-bold text-purple-600">${stats.max_files_per_submission}</div>
+                        <div class="text-3xl font-bold text-purple-600">${escapeHtml(stats.max_files_per_submission)}</div>
                         <div class="text-sm text-gray-600 mt-1">Max Files per Upload</div>
                     </div>
                 </div>
@@ -1763,10 +1767,10 @@
                             ${stats.recent_submissions.map(sub => `
                                 <div class="flex justify-between items-center p-3 bg-gray-50 rounded">
                                     <div>
-                                        <p class="text-sm font-medium">${sub.files_processed} files</p>
+                                        <p class="text-sm font-medium">${escapeHtml(sub.files_processed)} files</p>
                                         <p class="text-xs text-gray-500">${new Date(sub.timestamp).toLocaleString()}</p>
                                     </div>
-                                    <span class="text-xs text-gray-500">IP: ${sub.ip_address}</span>
+                                    <span class="text-xs text-gray-500">IP: ${escapeHtml(sub.ip_address)}</span>
                                 </div>
                             `).join('')}
                         </div>

@@ -5,6 +5,17 @@ let currentUser = null;
 let userLimits = null;
 let uploadMode = 'files'; // 'files' or 'folder'
 
+// HTML escaping utility to prevent XSS
+function escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
 // Initialize app
 document.addEventListener('DOMContentLoaded', function() {
     initializeApp();
@@ -309,7 +320,7 @@ async function processFiles() {
         });
 
         // Send request
-        const response = await axios.post('/upload', formData, {
+        const response = await axios.post('upload', formData, {
             headers: {
                 'Content-Type': 'multipart/form-data'
             },
@@ -336,7 +347,7 @@ async function processFiles() {
 
                 // Start download
                 setTimeout(() => {
-                    window.location.href = response.data.download_url;
+                    window.location.href = (window.APP_BASE_URL || '') + response.data.download_url;
                 }, 500);
             }, 800);
         }
@@ -362,8 +373,10 @@ async function processFiles() {
         selectedFiles = [];
         selectedFolders = [];
         displaySelectedFiles();
-        document.getElementById('file-input').value = '';
-        document.getElementById('folder-input').value = '';
+        const fileInput = document.getElementById('file-input');
+        const folderInput = document.getElementById('folder-input');
+        if (fileInput) fileInput.value = '';
+        if (folderInput) folderInput.value = '';
     }
 }
 
@@ -480,7 +493,7 @@ function showResultsInModal(data, totalSubmitted = 1) {
             <p class="text-sm text-blue-800">
                 <i class="fas fa-download mr-1"></i>
                 Your download should start automatically. If not,
-                <a href="${data.download_url}" class="underline font-semibold">click here</a>.
+                <a href="${(window.APP_BASE_URL || '') + data.download_url}" class="underline font-semibold">click here</a>.
             </p>
         </div>
     </div>`;
@@ -590,7 +603,7 @@ function updateFileProgress(fileName, status, percent, type = 'success') {
 // Load user limits
 async function loadUserLimits() {
     try {
-        const response = await axios.get('/limits');
+        const response = await axios.get('limits');
         userLimits = response.data;
         updateLimitsDisplay();
     } catch (error) {
@@ -627,7 +640,7 @@ function updateLimitsDisplay() {
 async function checkAuthStatus() {
     // JWT is now stored in HttpOnly cookie, sent automatically with requests
     try {
-        const response = await axios.get('/auth/me');
+        const response = await axios.get('auth/me');
         currentUser = response.data.user;
         updateAuthUI(currentUser);
     } catch (error) {
@@ -669,7 +682,7 @@ function updateAuthUI(user) {
 
         authSection.innerHTML = `
             <div class="flex items-center space-x-3">
-                <span class="text-sm text-gray-700">Welcome, <span class="font-semibold">${user.name}</span></span>
+                <span class="text-sm text-gray-700">Welcome, <span class="font-semibold">${escapeHtml(user.name)}</span></span>
                 ${!user.is_approved ? '<span class="px-2 py-1 text-xs bg-yellow-100 text-yellow-800 rounded-full">Pending Approval</span>' : ''}
                 <div class="relative">
                     <button onclick="toggleUserMenu(event)" class="text-gray-700 hover:text-indigo-600">
@@ -726,7 +739,7 @@ document.addEventListener('click', function(event) {
     const userMenu = document.getElementById('user-menu');
     const userIcon = event.target.closest('button[onclick^="toggleUserMenu"]');
 
-    if (!userIcon && !userMenu.contains(event.target)) {
+    if (userMenu && !userIcon && !userMenu.contains(event.target)) {
         userMenu.classList.add('hidden');
     }
 });
@@ -788,7 +801,7 @@ async function handleLogin(event) {
     loginBtn.innerHTML = '<i class="fas fa-spinner animate-spin mr-2"></i>Logging in...';
 
     try {
-        const response = await axios.post('/auth/login', {
+        const response = await axios.post('auth/login', {
             email: email,
             password: password,
             remember: remember
@@ -836,7 +849,7 @@ async function handleRegister(event) {
     registerBtn.innerHTML = '<i class="fas fa-spinner animate-spin mr-2"></i>Registering...';
 
     try {
-        const response = await axios.post('/auth/register', {
+        const response = await axios.post('auth/register', {
             name: name,
             email: email,
             password: password
@@ -867,7 +880,7 @@ async function handleRegister(event) {
 async function logout() {
     try {
         // Logout clears the HttpOnly JWT cookie server-side
-        await axios.post('/auth/logout');
+        await axios.post('auth/logout');
     } catch (error) {
         console.error('Logout error:', error);
     } finally {
@@ -912,7 +925,7 @@ async function handleChangePassword(event) {
 
     try {
         // JWT cookie is sent automatically
-        const response = await axios.post('/auth/change-password', {
+        const response = await axios.post('auth/change-password', {
             current_password: currentPassword,
             new_password: newPassword
         });
@@ -933,7 +946,7 @@ async function handleChangePassword(event) {
 async function showUsageStats() {
     try {
         // JWT cookie is sent automatically
-        const response = await axios.get('/usage-stats');
+        const response = await axios.get('usage-stats');
 
         const stats = response.data;
 
@@ -950,15 +963,15 @@ async function showUsageStats() {
                 </div>
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
                     <div class="text-center p-4 bg-blue-50 rounded-lg">
-                        <div class="text-3xl font-bold text-blue-600">${stats.total_submissions}</div>
+                        <div class="text-3xl font-bold text-blue-600">${escapeHtml(stats.total_submissions)}</div>
                         <div class="text-sm text-gray-600 mt-1">Total Submissions</div>
                     </div>
                     <div class="text-center p-4 bg-green-50 rounded-lg">
-                        <div class="text-3xl font-bold text-green-600">${stats.total_files_processed}</div>
+                        <div class="text-3xl font-bold text-green-600">${escapeHtml(stats.total_files_processed)}</div>
                         <div class="text-sm text-gray-600 mt-1">Files Processed</div>
                     </div>
                     <div class="text-center p-4 bg-purple-50 rounded-lg">
-                        <div class="text-3xl font-bold text-purple-600">${stats.max_files_per_submission}</div>
+                        <div class="text-3xl font-bold text-purple-600">${escapeHtml(stats.max_files_per_submission)}</div>
                         <div class="text-sm text-gray-600 mt-1">Max Files per Upload</div>
                     </div>
                 </div>
@@ -970,10 +983,10 @@ async function showUsageStats() {
                             ${stats.recent_submissions.map(sub => `
                                 <div class="flex justify-between items-center p-3 bg-gray-50 rounded">
                                     <div>
-                                        <p class="text-sm font-medium">${sub.files_processed} files processed</p>
+                                        <p class="text-sm font-medium">${escapeHtml(sub.files_processed)} files processed</p>
                                         <p class="text-xs text-gray-500">${new Date(sub.timestamp).toLocaleString()}</p>
                                     </div>
-                                    <span class="text-xs text-gray-500">IP: ${sub.ip_address}</span>
+                                    <span class="text-xs text-gray-500">IP: ${escapeHtml(sub.ip_address)}</span>
                                 </div>
                             `).join('')}
                         </div>
@@ -1234,7 +1247,7 @@ async function handleInactivityTimeout() {
         // Force logout even if API call fails
         localStorage.removeItem('auth_token');
         localStorage.removeItem('user_settings');
-        window.location.href = '/';
+        window.location.href = (window.APP_BASE_URL || '') + '/';
     }
 }
 
@@ -1245,7 +1258,7 @@ async function checkTokenRenewal() {
 
     try {
         // Refresh token if needed (server will check if within 30 minutes of expiration)
-        const response = await axios.post('/auth/refresh-token', {}, {
+        const response = await axios.post('auth/refresh-token', {}, {
             headers: {
                 'Authorization': `Bearer ${token}`
             }

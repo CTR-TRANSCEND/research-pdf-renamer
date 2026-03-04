@@ -63,10 +63,10 @@ def check_database_health():
         }
 
         # Determine overall health
-        if health["response_time_ms"] > 1000:  # More than 1 second
-            health["status"] = "warning"
-        elif health["response_time_ms"] > 5000:  # More than 5 seconds
+        if health["response_time_ms"] > 5000:  # More than 5 seconds
             health["status"] = "critical"
+        elif health["response_time_ms"] > 1000:  # More than 1 second
+            health["status"] = "warning"
         elif pool_stats.get("status") in ["critical", "warning"]:
             health["status"] = pool_stats["status"]
         else:

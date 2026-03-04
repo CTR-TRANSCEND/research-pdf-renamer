@@ -4,7 +4,7 @@ from backend.models import User, Usage
 from backend.database import db
 from backend.utils.auth import admin_required
 from backend.utils.validators import validate_llm_server_url
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import logging
 import threading
 
@@ -33,6 +33,7 @@ def get_pending_users():
     """Get list of users pending approval."""
     page = request.args.get("page", 1, type=int)
     per_page = request.args.get("per_page", 20, type=int)
+    per_page = min(per_page, 100)
 
     pending_users = (
         User.query.filter_by(is_approved=False, is_admin=False)
@@ -137,7 +138,7 @@ def get_pending_users():
 @admin_required
 def approve_user(user_id):
     """Approve a user registration."""
-    user = User.query.get_or_404(user_id)
+    user = db.get_or_404(User, user_id)
 
     # LOG-002: Fix race condition with atomic UPDATE
     result = User.query.filter_by(id=user_id, is_approved=False).update(
@@ -173,7 +174,7 @@ def approve_user(user_id):
 @admin_required
 def reject_user(user_id):
     """Reject and delete a user registration."""
-    user = User.query.get_or_404(user_id)
+    user = db.get_or_404(User, user_id)
 
     # Don't allow deletion of admins
     if user.is_admin:
@@ -199,7 +200,7 @@ def reject_user(user_id):
 @admin_required
 def deactivate_user(user_id):
     """Deactivate a user account."""
-    user = User.query.get_or_404(user_id)
+    user = db.get_or_404(User, user_id)
 
     # Don't allow deactivation of admins
     if user.is_admin:
@@ -211,7 +212,7 @@ def deactivate_user(user_id):
         return jsonify({"error": "User is already deactivated or not approved"}), 400
 
     user.is_active = False
-    user.deactivated_at = datetime.utcnow()
+    user.deactivated_at = datetime.now(timezone.utc)
     db.session.commit()
 
     return jsonify(
@@ -234,7 +235,7 @@ def deactivate_user(user_id):
 @admin_required
 def activate_user(user_id):
     """Activate a previously deactivated user account."""
-    user = User.query.get_or_404(user_id)
+    user = db.get_or_404(User, user_id)
 
     # Don't allow activation of admins
     if user.is_admin:
@@ -267,7 +268,7 @@ def activate_user(user_id):
 @admin_required
 def delete_user(user_id):
     """Permanently delete a user account and all associated data."""
-    user = User.query.get_or_404(user_id)
+    user = db.get_or_404(User, user_id)
 
     # Don't allow deletion of admins
     if user.is_admin:
@@ -295,6 +296,7 @@ def get_all_users():
     """Get all users with pagination and filtering."""
     page = request.args.get("page", 1, type=int)
     per_page = request.args.get("per_page", 20, type=int)
+    per_page = min(per_page, 100)
     search = request.args.get("search", "")
     status = request.args.get("status", "")  # 'approved', 'pending', 'all'
 
@@ -438,7 +440,8 @@ def get_admin_stats():
     admin_users = user_stats.admin_users or 0
 
     # Usage statistics - optimized with database aggregation
-    last_month = datetime.utcnow() - timedelta(days=30)
+    # Use naive UTC for SQLite compatibility (SQLite stores naive datetimes)
+    last_month = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=30)
 
     # Get all usage statistics in one query
     usage_stats = (
@@ -497,7 +500,7 @@ def get_admin_stats():
             activity_type = "User Deactivated"
             description = f"{user.name} ({user.email})"
         elif user.is_approved and user.created_at < (
-            datetime.utcnow() - timedelta(days=1)
+            datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=1)
         ):
             # Check if user was approved recently (approximate)
             activity_type = "User Approved"
@@ -1080,7 +1083,7 @@ def manage_llm_settings():
         )
 
     elif request.method == "POST":
-        data = request.get_json()
+        data = request.get_json(silent=True) or {}
         provider = data.get("provider")
         model = data.get("model")
         api_key = data.get("api_key")
@@ -1159,6 +1162,13 @@ def manage_llm_settings():
                     {"error": "Server URL must start with http:// or https://"}
                 ), 400
 
+            # SSRF validation
+            is_valid, error_msg = validate_llm_server_url(ollama_url)
+            if not is_valid:
+                return jsonify(
+                    {"error": f"Invalid server URL: {error_msg}"}
+                ), 400
+
         # Save settings to database (provider, model, ollama_url only - not API keys)
         user_id = current_user.id if current_user.is_authenticated else None
 
@@ -1216,7 +1226,7 @@ def test_ollama_connection():
     import requests
     import os
 
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
     ollama_url = data.get("ollama_url", "http://localhost:11434").strip()
     api_key = data.get("api_key", "").strip()
     provider = data.get("provider", "ollama")
@@ -1367,7 +1377,7 @@ def save_api_key():
     import os
     import stat
 
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
     provider = data.get("provider", "openai")
     api_key = data.get("api_key", "").strip()
 
@@ -1581,7 +1591,7 @@ def system_status():
             },
             "storage": storage_status,
             "system": system_info,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
     )
 
@@ -1595,7 +1605,7 @@ def toggle_user_admin(user_id):
         if not current_user.is_admin:
             return jsonify({"error": "Permission denied"}), 403
 
-        user = User.query.get_or_404(user_id)
+        user = db.get_or_404(User, user_id)
 
         # Prevent users from removing their own admin status
         if user.id == current_user.id:
@@ -1620,8 +1630,8 @@ def toggle_user_admin(user_id):
 def update_user_limits(user_id):
     """Update user file limits."""
     try:
-        user = User.query.get_or_404(user_id)
-        data = request.get_json()
+        user = db.get_or_404(User, user_id)
+        data = request.get_json(silent=True) or {}
 
         # Prevent modifying admin users' limits (except by other admins)
         if user.is_admin and not current_user.is_admin:

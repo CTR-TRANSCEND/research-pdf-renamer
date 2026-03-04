@@ -125,12 +125,12 @@
 </div>
 
 <!-- Processing Modal (Unified Progress + Results) -->
-<div id="processing-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-40">
+<div id="processing-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-40" role="dialog" aria-modal="true" aria-labelledby="processing-modal-title-heading">
     <div class="bg-white rounded-lg shadow-xl max-w-3xl w-full mx-4 max-h-[80vh] overflow-y-auto">
         <div class="p-6">
             <!-- Modal Header -->
             <div class="flex justify-between items-start mb-4">
-                <h2 id="processing-modal-title" class="text-2xl font-bold text-gray-900">
+                <h2 id="processing-modal-title-heading" class="text-2xl font-bold text-gray-900">
                     <i id="processing-modal-icon" class="fas fa-spinner fa-spin mr-2 text-indigo-600"></i>
                     <span id="processing-modal-text">Processing Files...</span>
                 </h2>
@@ -190,11 +190,11 @@
 </div>
 
 <!-- Login Modal -->
-<div id="login-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-40">
+<div id="login-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-40" role="dialog" aria-modal="true" aria-labelledby="login-modal-title">
     <div class="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
         <div class="p-6">
             <div class="flex justify-between items-center mb-4">
-                <h2 class="text-2xl font-bold text-gray-900">
+                <h2 id="login-modal-title" class="text-2xl font-bold text-gray-900">
                     <i class="fas fa-sign-in-alt mr-2"></i>Login
                 </h2>
                 <button onclick="closeLoginModal()" class="text-gray-500 hover:text-gray-700">
@@ -242,11 +242,11 @@
 </div>
 
 <!-- Register Modal -->
-<div id="register-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-40">
+<div id="register-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-40" role="dialog" aria-modal="true" aria-labelledby="register-modal-title">
     <div class="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
         <div class="p-6">
             <div class="flex justify-between items-center mb-4">
-                <h2 class="text-2xl font-bold text-gray-900">
+                <h2 id="register-modal-title" class="text-2xl font-bold text-gray-900">
                     <i class="fas fa-user-plus mr-2"></i>Register
                 </h2>
                 <button onclick="closeRegisterModal()" class="text-gray-500 hover:text-gray-700">
@@ -343,11 +343,11 @@
 </div>
 
 <!-- Change Password Modal -->
-<div id="change-password-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-40">
+<div id="change-password-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-40" role="dialog" aria-modal="true" aria-labelledby="change-password-modal-title">
     <div class="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
         <div class="p-6">
             <div class="flex justify-between items-center mb-4">
-                <h2 class="text-2xl font-bold text-gray-900">
+                <h2 id="change-password-modal-title" class="text-2xl font-bold text-gray-900">
                     <i class="fas fa-key mr-2"></i>Change Password
                 </h2>
                 <button onclick="closeChangePasswordModal()" class="text-gray-500 hover:text-gray-700">
@@ -389,11 +389,11 @@
 </div>
 
 <!-- Folder Restriction Modal -->
-<div id="folder-restriction-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-40">
+<div id="folder-restriction-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-40" role="dialog" aria-modal="true" aria-labelledby="folder-restriction-modal-title">
     <div class="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
         <div class="p-6">
             <div class="flex justify-between items-center mb-4">
-                <h2 class="text-2xl font-bold text-gray-900">
+                <h2 id="folder-restriction-modal-title" class="text-2xl font-bold text-gray-900">
                     <i class="fas fa-folder mr-2 text-indigo-600"></i>Folder Upload Restricted
                 </h2>
                 <button onclick="closeFolderRestrictionModal()" class="text-gray-500 hover:text-gray-700">

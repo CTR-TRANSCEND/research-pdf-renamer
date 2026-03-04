@@ -8,7 +8,7 @@ from backend.models import User, SystemSettings
 from werkzeug.middleware.proxy_fix import ProxyFix
 import os
 import jwt
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 
 def get_user_id_from_user():
@@ -124,7 +124,7 @@ def create_app(config_name=None):
     # Detect database type from DATABASE_URL for optimized configuration
     database_url = os.environ.get("DATABASE_URL", "")
     if database_url.startswith("postgresql://"):
-        config_name = "postgresql"  # Use PostgreSQL-specific config
+        config_name = "production"  # Use production config for PostgreSQL
 
     app.config.from_object(config[config_name])
 
@@ -277,7 +277,8 @@ def create_app(config_name=None):
         if request.endpoint == "static":
             return None
 
-        now = datetime.utcnow()
+        # Use naive UTC for SQLite compatibility
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
         inactivity_minutes = int(app.config.get("INACTIVITY_TIMEOUT_MINUTES", 30))
         inactivity_delta = timedelta(minutes=inactivity_minutes)
 
@@ -286,7 +287,7 @@ def create_app(config_name=None):
             last_activity_raw = session.get("last_activity")
             if last_activity_raw:
                 try:
-                    last_activity = datetime.fromisoformat(last_activity_raw)
+                    last_activity = datetime.fromisoformat(last_activity_raw).replace(tzinfo=None)
                 except ValueError:
                     last_activity = None
             else:
@@ -361,9 +362,10 @@ def create_app(config_name=None):
 
     app.register_blueprint(main_blueprint)
 
-    from backend.routes.auth import auth as auth_blueprint
+    from backend.routes.auth import auth as auth_blueprint, limiter as auth_limiter
 
     app.register_blueprint(auth_blueprint, url_prefix="/api/auth")
+    auth_limiter.init_app(app)
 
     from backend.routes.upload import upload as upload_blueprint
 

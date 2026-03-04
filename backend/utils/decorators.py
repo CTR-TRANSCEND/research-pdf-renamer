@@ -2,7 +2,7 @@ from functools import wraps
 import logging
 from flask import request, g, jsonify
 from flask_login import current_user
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from backend.models import Usage, User
 from backend.database import db
 
@@ -16,7 +16,7 @@ def track_usage(f):
     def decorated_function(*args, **kwargs):
         # Store usage info in g for later use
         g.user_id = None
-        g.ip_address = request.environ.get("HTTP_X_FORWARDED_FOR", request.remote_addr)
+        g.ip_address = request.remote_addr
         g.user_agent = request.headers.get("User-Agent", "")
 
         # Check Flask-Login current_user instead of request.current_user
@@ -51,7 +51,8 @@ def check_rate_limit(f):
             max_submissions = 5  # 5 times per day
 
         # Check recent usage
-        now = datetime.utcnow()
+        # Use naive UTC for SQLite compatibility
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
         day_ago = now - timedelta(days=1)
 
         if g.user_id:
@@ -124,7 +125,7 @@ def record_usage(files_processed: int, user_id=None):
     try:
         usage = Usage(
             user_id=user_id,
-            ip_address=request.environ.get("HTTP_X_FORWARDED_FOR", request.remote_addr),
+            ip_address=request.remote_addr,
             user_agent=request.headers.get("User-Agent", ""),
             files_processed=files_processed,
         )

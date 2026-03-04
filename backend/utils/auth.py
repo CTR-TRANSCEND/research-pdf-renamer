@@ -64,7 +64,7 @@ def auth_required(f):
                         f"auth_required: User found: {user}, approved: {user.is_approved if user else 'None'}"
                     )
 
-                    if user and user.is_approved:
+                    if user and user.is_approved and user.is_active and user.deactivated_at is None:
                         # Set the user in Flask-Login for this request
                         logger.debug(
                             f"auth_required: Logging in user {user_id} via JWT ({token_source})"
@@ -128,7 +128,7 @@ def admin_required(f):
 
 def generate_token(user):
     """Generate JWT token for API access with inactivity-based expiration."""
-    now = datetime.datetime.utcnow()
+    now = datetime.datetime.now(datetime.timezone.utc)
     inactivity_minutes = int(current_app.config.get("INACTIVITY_TIMEOUT_MINUTES", 30))
     payload = {
         "user_id": user.id,
@@ -196,9 +196,9 @@ def refresh_token_if_needed(token):
             algorithms=["HS256"],
         )
 
-        now = datetime.datetime.utcnow()
-        exp_time = datetime.datetime.fromtimestamp(payload["exp"])
-        issued_at = datetime.datetime.fromtimestamp(payload.get("iat", 0))
+        now = datetime.datetime.now(datetime.timezone.utc)
+        exp_time = datetime.datetime.fromtimestamp(payload["exp"], tz=datetime.timezone.utc)
+        issued_at = datetime.datetime.fromtimestamp(payload.get("iat", 0), tz=datetime.timezone.utc)
 
         # Security: Enforce maximum token lifetime of 7 days from original issuance
         max_lifetime = datetime.timedelta(days=7)

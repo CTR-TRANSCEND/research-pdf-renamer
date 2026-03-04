@@ -1,0 +1,33 @@
+# Logrotate configuration for Research PDF Renamer
+# Install to: /etc/logrotate.d/pdf-renamer
+
+/var/log/pdf-renamer/*.log {
+    daily
+    rotate 14
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0640 www-data adm
+    sharedscripts
+    postrotate
+        # Reload gunicorn to open new log files
+        systemctl reload pdf-renamer >/dev/null 2>&1 || true
+    endscript
+}
+
+# Apache access/error logs for pdf-renamer
+/var/log/apache2/pdf-renamer-*.log {
+    daily
+    rotate 30
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0640 www-data adm
+    sharedscripts
+    postrotate
+        # Reload Apache to open new log files
+        systemctl reload apache2 >/dev/null 2>&1 || true
+    endscript
+}

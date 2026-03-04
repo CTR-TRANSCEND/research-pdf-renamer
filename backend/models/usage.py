@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from backend.database import db
 
 class Usage(db.Model):
@@ -10,7 +10,7 @@ class Usage(db.Model):
     user_agent = db.Column(db.Text)
     files_processed = db.Column(db.Integer, default=0, nullable=False)
     success = db.Column(db.Boolean, default=True, nullable=False)  # Whether processing was successful
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow, nullable=False, index=True)
+    timestamp = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False, index=True)
 
     # Composite indexes for common query patterns
     __table_args__ = (

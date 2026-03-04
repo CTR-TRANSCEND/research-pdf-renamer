@@ -167,6 +167,7 @@ ResearchPDFFileRenamerGLM/
 | `SECRET_KEY` | Flask secret key | Auto-generated |
 | `DATABASE_URL` | Database URL | `sqlite:///instance/app.db` |
 | `APPLICATION_ROOT` | Reverse proxy path | `/pdf-renamer` |
+| `INACTIVITY_TIMEOUT_MINUTES` | Auto-logout after inactivity | `30` |
 
 ### LLM Provider Configuration
 
@@ -258,38 +259,112 @@ ruff format backend/
 
 ## Production Deployment
 
-### Apache Configuration
+### Quick Deployment
 
-The application includes Apache configuration for reverse proxy:
+For production deployment, use the provided installation script:
 
-```apache
-<VirtualHost *:80>
-    ServerName localhost
+```bash
+# Clone the repository
+git clone https://github.com/hurlab/research-pdf-renamer.git
+cd research-pdf-renamer
 
-    # Reverse proxy to Flask
-    ProxyPreserveHost On
-    ProxyPass /pdf-renamer/ http://localhost:5000/
-    ProxyPassReverse /pdf-renamer/ http://localhost:5000/
-
-    # Security headers
-    Header always set X-Content-Type-Options "nosniff"
-    Header always set X-Frame-Options "SAMEORIGIN"
-    Header always set X-XSS-Protection "1; mode=block"
-</VirtualHost>
+# Run production installation
+sudo systemd/install.sh
 ```
+
+The installation script will:
+1. Check system dependencies (Python, pip, git)
+2. Create installation directory (`/opt/pdf-renamer`)
+3. Set up Python virtual environment
+4. Create systemd service
+5. Configure logrotate
+6. Prompt for Apache configuration
+
+### Manual Deployment
+
+For manual deployment or custom configurations, see the full [Deployment Guide](docs/deployment.md).
+
+#### Apache Configuration
+
+The application includes Apache configuration for reverse proxy. See `apache-pdf-renamer-enhanced.conf` for the complete configuration with security headers, static file serving, and WebSocket support.
+
+#### Systemd Service
+
+A systemd service unit file is provided in `systemd/pdf-renamer.service`. Key features:
+- Runs as `www-data` user
+- Gunicorn WSGI server with 3 workers
+- Auto-restart on failure
+- Log rotation configuration
+
+### Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `SECRET_KEY` | Flask secret key for sessions | Auto-generated (change in production!) |
+| `DATABASE_URL` | Database connection string | `sqlite:///pdf-renamer.db` |
+| `FLASK_ENV` | Environment (development/production) | `production` |
+| `APPLICATION_ROOT` | Reverse proxy path | `/pdf-renamer` |
+| `ALLOW_PRIVATE_IPS` | Allow private IPs for LLM URLs | `false` (see SSRF Protection below) |
+| `OPENAI_COMPATIBLE_API_KEY` | API key for OpenAI-compatible servers | Required |
+| `LLM_PROVIDER` | LLM provider (openai, ollama, openai-compatible) | `openai` |
+| `LLM_MODEL` | Model name | `gpt-4o-mini` |
+
+### SSRF Protection (DEPLOY-001)
+
+The application validates LLM server URLs to prevent SSRF attacks. By default, private IP addresses are rejected.
+
+To allow local LLM servers (Ollama, LM Studio):
+```bash
+ALLOW_PRIVATE_IPS=true
+```
+
+**WARNING**: Only enable in trusted environments. This allows connections to internal network services.
+
+### CSRF Protection (DEPLOY-002)
+
+State-changing API endpoints require CSRF tokens:
+- `POST /api/auth/change-password`
+- `POST /api/auth/update-profile`
+- `POST /api/admin/*` (all admin actions)
+- `DELETE /api/admin/*`
+
+Exempt endpoints (JWT + session protection):
+- `POST /api/auth/login`
+- `POST /api/auth/register`
+- `POST /api/auth/logout`
+
+### Database Options
+
+**SQLite** (default - for development/small deployments):
+```bash
+DATABASE_URL=sqlite:///pdf-renamer.db
+```
+
+**PostgreSQL** (recommended for production):
+```bash
+DATABASE_URL=postgresql://user:password@localhost/dbname
+```
+
+**MariaDB/MySQL**:
+```bash
+DATABASE_URL=mysql+pymysql://user:password@localhost/dbname
+```
+
+See the [Deployment Guide](docs/deployment.md) for detailed database setup instructions.
 
 ### Security Checklist
 
 - [x] Strong session management with proper cookie paths
 - [x] SQL injection prevention (SQLAlchemy ORM)
 - [x] XSS protection (Jinja2 auto-escaping)
-- [x] CSRF protection (Flask-WTF)
+- [x] CSRF protection for state-changing endpoints (Flask-WTF)
 - [x] Password hashing (werkzeug)
 - [x] File type validation (magic bytes)
-- [x] Rate limiting (per user type)
-- [ ] HTTPS in production
-- [ ] Strong SECRET_KEY in production
-- [ ] PostgreSQL instead of SQLite (recommended)
+- [x] Rate limiting (Flask-Limiter)
+- [x] SSRF protection for LLM URLs
+- [ ] HTTPS in production (use Let's Encrypt with certbot)
+- [ ] Strong SECRET_KEY in production (use: `python3 -c 'import secrets; print(secrets.token_hex(32))'`)
+- [ ] PostgreSQL instead of SQLite (recommended for multi-user deployments)
 
 ## Troubleshooting
 

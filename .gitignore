@@ -211,7 +211,6 @@ dist-ssr/
 .Python
 ENV/
 .venv
-test_*.py
 test_*.js
 test_*.mjs
 test_*.sh
@@ -223,7 +222,6 @@ check_*.py
 check_*.mjs
 check_*.sh
 playwright.config.js
-pytest.ini
 test-results/
 test_final/
 test_v2/

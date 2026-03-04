@@ -20,7 +20,7 @@ os.environ.setdefault("SECRET_KEY", "test-secret-key-for-testing-only")
 os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="function")
 def app():
     """Create and configure a Flask application for testing."""
     from backend.app import create_app

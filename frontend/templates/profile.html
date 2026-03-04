@@ -177,9 +177,19 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
 <script>
     console.log('[PROFILE PAGE] Script loaded!');
+
+    // HTML escaping utility to prevent XSS
+    function escapeHtml(str) {
+        if (str === null || str === undefined) return '';
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
 
     // Base URL for navigation (matches APPLICATION_ROOT)
     const BASE_URL = '{{ url_for("main.index") }}'.replace(/\/$/, '') || '';
@@ -189,17 +199,7 @@
     // Load user profile
     async function loadProfile() {
         try {
-            const token = localStorage.getItem('auth_token');
-            if (!token) {
-                window.location.href = BASE_URL + '/';
-                return;
-            }
-
-            const response = await axios.get('auth/me', {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
-            });
+            const response = await axios.get('auth/me');
 
             profileUserData = response.data.user;
 
@@ -246,17 +246,7 @@
     // Load user settings
     async function loadSettings() {
         try {
-            const token = localStorage.getItem('auth_token');
-            if (!token) {
-                console.log('No token found, skipping settings load');
-                return;
-            }
-
-            const response = await axios.get('auth/settings', {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
-            });
+            const response = await axios.get('auth/settings');
 
             const settings = response.data.settings;
             document.getElementById('filename-format').value = settings.filename_format || 'Author_Year_Journal_Keywords';
@@ -285,32 +275,22 @@
     // Load usage statistics
     async function loadUsageStats() {
         try {
-            const token = localStorage.getItem('auth_token');
-            if (!token) {
-                console.log('No authentication token found for usage stats');
-                return;
-            }
-
-            const response = await axios.get('usage-stats', {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
-            });
+            const response = await axios.get('usage-stats');
             const stats = response.data;
 
             const statsContent = document.getElementById('usage-stats-content');
             statsContent.innerHTML = `
                 <div class="grid md:grid-cols-3 gap-4">
                     <div class="text-center p-4 bg-blue-50 rounded-lg">
-                        <div class="text-3xl font-bold text-blue-600">${stats.total_submissions}</div>
+                        <div class="text-3xl font-bold text-blue-600">${escapeHtml(stats.total_submissions)}</div>
                         <div class="text-sm text-gray-600 mt-1">Total Submissions</div>
                     </div>
                     <div class="text-center p-4 bg-green-50 rounded-lg">
-                        <div class="text-3xl font-bold text-green-600">${stats.total_files_processed}</div>
+                        <div class="text-3xl font-bold text-green-600">${escapeHtml(stats.total_files_processed)}</div>
                         <div class="text-sm text-gray-600 mt-1">Files Processed</div>
                     </div>
                     <div class="text-center p-4 bg-purple-50 rounded-lg">
-                        <div class="text-3xl font-bold text-purple-600">${stats.max_files_per_submission}</div>
+                        <div class="text-3xl font-bold text-purple-600">${escapeHtml(stats.max_files_per_submission)}</div>
                         <div class="text-sm text-gray-600 mt-1">Max Files per Upload</div>
                     </div>
                 </div>
@@ -322,10 +302,10 @@
                             ${stats.recent_submissions.map(sub => `
                                 <div class="flex justify-between items-center p-3 bg-gray-50 rounded">
                                     <div>
-                                        <p class="text-sm font-medium">${sub.files_processed} files</p>
+                                        <p class="text-sm font-medium">${escapeHtml(sub.files_processed)} files</p>
                                         <p class="text-xs text-gray-500">${new Date(sub.timestamp).toLocaleString()}</p>
                                     </div>
-                                    <span class="text-xs text-gray-500">IP: ${sub.ip_address}</span>
+                                    <span class="text-xs text-gray-500">IP: ${escapeHtml(sub.ip_address)}</span>
                                 </div>
                             `).join('')}
                         </div>
@@ -349,13 +329,8 @@
         saveBtn.innerHTML = '<i class="fas fa-spinner animate-spin mr-2"></i>Saving...';
 
         try {
-            const token = localStorage.getItem('auth_token');
             const response = await axios.post('auth/update-profile', {
                 name: document.getElementById('profile-name').value
-            }, {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
             });
 
             showToast(response.data.message, 'success');
@@ -380,7 +355,6 @@
         saveBtn.innerHTML = '<i class="fas fa-spinner animate-spin mr-2"></i>Saving...';
 
         try {
-            const token = localStorage.getItem('auth_token');
             const format = document.getElementById('filename-format').value;
             const customFormat = document.getElementById('custom-format').value;
 
@@ -390,11 +364,7 @@
                 auto_download: document.getElementById('auto-download').checked
             };
 
-            const response = await axios.post('auth/update-settings', settings, {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
-            });
+            const response = await axios.post('auth/update-settings', settings);
 
             // Also save to localStorage as fallback
             localStorage.setItem('user_settings', JSON.stringify(settings));
@@ -720,26 +690,23 @@
 
     // Initialize immediately (script is at end of body, so DOM is ready)
     (async function initializeProfile() {
+        const HOME_URL = '{{ url_for("main.index") }}';
+        const ADMIN_URL = '{{ url_for("main.admin_panel") }}';
+
         // Use the global API_BASE_URL set by the server (includes APPLICATION_ROOT)
         if (window.API_BASE_URL) {
             axios.defaults.baseURL = window.API_BASE_URL;
         }
 
-        // Check authentication
-        const token = localStorage.getItem('auth_token');
-        if (token) {
-            axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-
-            // Get current user info and update navigation
-            try {
-                const response = await axios.get('/auth/me');
-                profileUserData = response.data.user;
-                updateAuthUI(profileUserData);
-            } catch (error) {
-                console.error('Error fetching user info:', error);
-                window.location.href = '/';
-                return;
-            }
+        // Get current user info and update navigation (JWT is in HttpOnly cookie)
+        try {
+            const response = await axios.get('auth/me');
+            profileUserData = response.data.user;
+            updateAuthUI(profileUserData, ADMIN_URL);
+        } catch (error) {
+            console.error('Error fetching user info:', error);
+            window.location.href = HOME_URL;
+            return;
         }
 
         loadProfile();
@@ -747,15 +714,15 @@
     })();
 
     // Update authentication UI
-    function updateAuthUI(user) {
+    function updateAuthUI(user, adminUrl) {
         const authSection = document.getElementById('auth-section');
         if (!authSection) return;
 
         if (user) {
             authSection.innerHTML = `
-                ${user.is_admin ? '<a href="/admin" class="text-gray-700 hover:text-indigo-600 px-3 py-2 rounded-md text-sm font-medium">Admin</a>' : ''}
+                ${user.is_admin ? '<a href="' + adminUrl + '" class="text-gray-700 hover:text-indigo-600 px-3 py-2 rounded-md text-sm font-medium">Admin</a>' : ''}
                 <div class="relative">
-                    <span class="text-sm text-gray-700">Welcome, <span class="font-semibold">${user.name}</span></span>
+                    <span class="text-sm text-gray-700">Welcome, <span class="font-semibold">${escapeHtml(user.name)}</span></span>
                     ${!user.is_approved ? '<span class="ml-2 px-2 py-1 text-xs bg-yellow-100 text-yellow-800 rounded-full">Pending Approval</span>' : ''}
                 </div>
             `;

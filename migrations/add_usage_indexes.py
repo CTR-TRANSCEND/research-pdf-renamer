@@ -4,7 +4,7 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from datetime import datetime
+from datetime import datetime, timezone
 from backend.database import db
 from backend.models import Usage
 from sqlalchemy import text
@@ -59,5 +59,5 @@ def downgrade():
             raise
 
 if __name__ == "__main__":
-    print(f"Running index migration at {datetime.utcnow()}")
+    print(f"Running index migration at {datetime.now(timezone.utc)}")
     upgrade()

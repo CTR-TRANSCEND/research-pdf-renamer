@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from backend.database import db
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
@@ -16,7 +16,7 @@ class SystemSettings(db.Model):
     value = db.Column(db.Text, nullable=True)
     is_encrypted = db.Column(db.Boolean, default=False, nullable=False)
     updated_at = db.Column(
-        db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+        db.DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc)
     )
     updated_by = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
 

@@ -8,7 +8,7 @@ from backend.utils.auth import auth_required
 from werkzeug.utils import secure_filename
 import os
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 upload = Blueprint("upload", __name__)
@@ -322,7 +322,7 @@ def download_file(filepath):
 
         # SEC-003 FIX: Add realpath check to prevent path traversal via symlinks
         # Get the absolute paths and verify the requested file stays within allowed directory
-        allowed_dir = os.path.abspath(os.path.join("uploads", "downloads"))
+        allowed_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'uploads', 'downloads'))
         file_path = os.path.abspath(os.path.join(allowed_dir, safe_filepath))
 
         # Verify the file path is within the allowed directory
@@ -379,14 +379,12 @@ def usage_stats():
         return jsonify({"error": "Authentication required"}), 401
 
     # Get usage stats (daily for anonymous users, yearly for registered)
-    from datetime import datetime
-
     if current_user.is_approved:
-        year_ago = datetime.utcnow() - timedelta(days=365)
+        year_ago = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=365)
         time_period = "year"
         time_filter = year_ago
     else:
-        day_ago = datetime.utcnow() - timedelta(days=1)
+        day_ago = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=1)
         time_period = "day"
         time_filter = day_ago
 

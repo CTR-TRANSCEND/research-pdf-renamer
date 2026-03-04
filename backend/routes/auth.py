@@ -11,9 +11,7 @@ from backend.utils.auth import (
     set_jwt_cookie,
     clear_jwt_cookie,
 )
-from datetime import datetime
-from flask_wtf.csrf import CSRFError
-from functools import wraps
+from datetime import datetime, timezone
 
 
 def csrf_exempt():
@@ -40,12 +38,8 @@ auth = Blueprint("auth", __name__)
 
 
 # PERF-001: Rate limiter for auth routes
-# Using Flask-Limiter's standard pattern for blueprint-level rate limiting
-limiter = Limiter(
-    key_func=get_remote_address,
-    storage_uri="memory://",
-    strategy="fixed-window",
-)
+# Uses lazy init pattern - initialized via init_app in create_app()
+limiter = Limiter(key_func=get_remote_address)
 
 
 @auth.route("/register", methods=["POST"])
@@ -53,7 +47,7 @@ limiter = Limiter(
 @limiter.limit("5 per hour")
 def register():
     """Register a new user."""
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
 
     # Validate input
     email = data.get("email", "").strip()
@@ -139,7 +133,7 @@ def login_page():
 @limiter.limit("10 per minute")
 def login():
     """Login existing user and set JWT in HttpOnly cookie."""
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
     email = data.get("email", "").strip()
     password = data.get("password", "")
 
@@ -184,8 +178,8 @@ def login():
         login_user(user, remember=data.get("remember", False))
         # Enable inactivity-based expiration for the Flask session cookie
         session.permanent = True
-        session["last_activity"] = datetime.utcnow().isoformat()
-        user.last_login = datetime.utcnow()
+        session["last_activity"] = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
+        user.last_login = datetime.now(timezone.utc)
         db.session.commit()
 
         # Create response with user data
@@ -259,11 +253,11 @@ def get_current_user():
 
 
 @auth.route("/change-password", methods=["POST"])
-@login_required
+@auth_required
 @limiter.limit("3 per hour", key_func=get_user_id_from_user)
 def change_password():
     """Change user password. CSRF token required for security."""
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
     current_password = data.get("current_password", "")
     new_password = data.get("new_password", "")
 
@@ -287,11 +281,11 @@ def change_password():
 
 
 @auth.route("/update-profile", methods=["POST"])
-@login_required
+@auth_required
 @limiter.limit("20 per hour", key_func=get_user_id_from_user)
 def update_profile():
     """Update user profile information. CSRF token required for security."""
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
     name = data.get("name", "").strip()
 
     if not name:
@@ -325,7 +319,7 @@ def update_profile():
 @limiter.limit("20 per hour", key_func=get_user_id_from_user)
 def update_settings():
     """Update user preferences. CSRF token required for security."""
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
 
     # Get settings
     filename_format = data.get("filename_format", "Author_Year_Journal_Keywords")

@@ -146,15 +146,15 @@ def validate_llm_server_url(url: str) -> Tuple[bool, str]:
         # For environments where private IPs are required, set ALLOW_PRIVATE_IPS=true
         try:
             ip = ipaddress.ip_address(hostname)
-            if not ALLOW_PRIVATE_IPS:
+            # Allow loopback (127.0.0.1, ::1) for local LLM server development
+            # This is intentional as LLM servers often run locally
+            if not ip.is_loopback and not ALLOW_PRIVATE_IPS:
                 if ip.is_private or ip.is_link_local or ip.is_reserved:
                     return (
                         False,
                         "Private IP addresses and link-local addresses are not allowed for security reasons. "
                         "Set ALLOW_PRIVATE_IPS=true to enable.",
                     )
-            # Allow loopback (localhost, 127.0.0.1) for local LLM server development
-            # This is intentional as LLM servers often run locally
         except ValueError:
             # Not an IP address (hostname), continue validation
             pass
