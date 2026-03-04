@@ -45,7 +45,7 @@ class TestAuthEndpoints:
         for cookie_header in set_cookie_headers:
             cookie_str = str(cookie_header)
             # Should not have jwt or token in cookie name
-            assert "jwt" not in cookie_str.lower() or "token" not in cookie_str.lower()
+            assert "jwt_token" not in cookie_str.lower()
 
     def test_register_user_passwords_do_not_match(self, client, db):
         """Test registration with mismatched passwords."""

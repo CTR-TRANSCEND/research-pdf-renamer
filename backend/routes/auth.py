@@ -52,7 +52,11 @@ def register():
     # Validate input
     email = data.get("email", "").strip()
     password = data.get("password", "")
+    password_confirm = data.get("password_confirm", "")
     name = data.get("name", "").strip()
+
+    if password != password_confirm:
+        return jsonify({"error": "Passwords do not match"}), 400
 
     # Check validation
     is_valid, message = validate_email(email)

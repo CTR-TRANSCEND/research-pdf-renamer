@@ -170,17 +170,20 @@ class TestResourceExhaustionPrevention:
 class TestRateLimiterConfiguration:
     """Test PERF-003: Rate limiter configuration."""
 
-    def test_rate_limiter_is_initialized(self):
+    def test_rate_limiter_is_initialized(self, app):
         """Test that Flask-Limiter is initialized."""
-        pass
+        assert hasattr(app, "limiter")
+        assert app.limiter is not None
 
-    def test_rate_limiter_has_default_limits(self):
+    def test_rate_limiter_has_default_limits(self, app):
         """Test that default rate limits are configured."""
-        pass
+        limiter = app.limiter
+        assert limiter.limit_manager is not None
 
-    def test_rate_limiter_uses_memory_storage(self):
+    def test_rate_limiter_uses_memory_storage(self, app):
         """Test that rate limiter uses memory storage (or configurable backend)."""
-        pass
+        limiter = app.limiter
+        assert limiter._storage_uri == "memory://"
 
     def test_rate_limit_on_login_endpoint(self):
         """Test that login endpoint has rate limiting."""

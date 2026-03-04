@@ -476,10 +476,29 @@ class TestLoginRouteIntegration:
         # This test would verify unapproved users get 403
         pass
 
-    def test_login_fails_deactivated_user(self):
+    def test_login_fails_deactivated_user(self, client, db):
         """Test login fails for deactivated user."""
-        # This test would verify deactivated users cannot login
-        pass
+        from backend.models import User
+
+        user = User(
+            name="Deactivated User",
+            email="deactivated@example.com",
+        )
+        user.set_password("Password123!")
+        user.is_approved = True
+        user.is_active = False
+        user.deactivated_at = datetime.now(timezone.utc)
+        db.session.add(user)
+        db.session.commit()
+
+        response = client.post(
+            "/api/auth/login",
+            json={"email": "deactivated@example.com", "password": "Password123!"},
+        )
+
+        assert response.status_code in (401, 403)
+        data = response.get_json()
+        assert "error" in data
 
 
 class TestBeforeRequestIntegration:

@@ -565,6 +565,26 @@
         loadSystemStatus();
     })();
 
+    // Event delegation for user table actions (avoids XSS via inline onclick)
+    document.getElementById('users-table-body').addEventListener('click', function(e) {
+        const btn = e.target.closest('[data-action]');
+        if (!btn) return;
+        const action = btn.dataset.action;
+        if (action === 'editUserLimit') {
+            editUserLimit(
+                Number(btn.dataset.userId),
+                btn.dataset.userEmail,
+                btn.dataset.currentLimit === 'null' ? null : Number(btn.dataset.currentLimit)
+            );
+        } else if (action === 'toggleUserAdmin') {
+            toggleUserAdmin(
+                Number(btn.dataset.userId),
+                btn.dataset.userEmail,
+                btn.dataset.isAdmin === 'true'
+            );
+        }
+    });
+
     // Update authentication UI (from main.js)
     function updateAuthUI(user) {
         const authSection = document.getElementById('auth-section');
@@ -723,7 +743,7 @@
             document.getElementById('recent-activity').innerHTML = `
                 <div class="text-center py-8 text-red-500">
                     <i class="fas fa-exclamation-triangle text-2xl mb-2"></i>
-                    <p>Failed to load dashboard: ${errorMsg}</p>
+                    <p>Failed to load dashboard: ${escapeHtml(errorMsg)}</p>
                     <button onclick="loadDashboard()" class="mt-4 bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700">
                         Retry
                     </button>
@@ -780,7 +800,7 @@
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         <div class="flex items-center space-x-2">
                             <span>${escapeHtml(user.preferences?.max_files_per_session || user.usage_stats?.max_files_per_submission || 'Default')}</span>
-                            <button onclick="editUserLimit(${user.id}, '${user.email}', ${user.preferences?.max_files_per_session || user.usage_stats?.max_files_per_submission || 'null'})"
+                            <button data-action="editUserLimit" data-user-id="${user.id}" data-user-email="${escapeHtml(user.email)}" data-current-limit="${user.preferences?.max_files_per_session || user.usage_stats?.max_files_per_submission || 'null'}"
                                     class="text-indigo-600 hover:text-indigo-900 text-xs">
                                 <i class="fas fa-edit"></i>
                             </button>
@@ -796,7 +816,7 @@
                         ` : `
                             <button onclick="activateUser(${user.id})" class="text-green-600 hover:text-green-900 mr-3">Activate</button>
                         `}
-                        <button onclick="toggleUserAdmin(${user.id}, '${user.email.replace(/'/g, "\\\")}', ${user.is_admin})"
+                        <button data-action="toggleUserAdmin" data-user-id="${user.id}" data-user-email="${escapeHtml(user.email)}" data-is-admin="${user.is_admin}"
                                 class="${user.is_admin ? 'text-orange-600 hover:text-orange-900' : 'text-purple-600 hover:text-purple-900'} mr-3">
                             ${user.is_admin ? 'Remove Admin' : 'Make Admin'}
                         </button>

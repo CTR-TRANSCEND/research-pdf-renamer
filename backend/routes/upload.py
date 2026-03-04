@@ -298,7 +298,7 @@ def upload_files():
 
         print(f"[ERROR] Traceback: {traceback.format_exc()}")
         return jsonify(
-            {"error": "Server error during file processing", "details": str(e)}
+            {"error": "Server error during file processing"}
         ), 500
 
 

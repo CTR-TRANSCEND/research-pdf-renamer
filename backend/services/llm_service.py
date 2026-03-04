@@ -175,12 +175,17 @@ class LLMService:
         """Load provider-specific server URL from database with fallback to config/env."""
         try:
             from backend.models import SystemSettings
+            from backend.utils.validators import validate_llm_server_url
 
             # Try to get provider-specific URL from database
             provider_url = SystemSettings.get_provider_url(self.provider)
             if provider_url:
-                logger.info(f"Loaded {self.provider} URL from database: {provider_url}")
-                return provider_url
+                is_valid, error_msg = validate_llm_server_url(provider_url)
+                if is_valid:
+                    logger.info(f"Loaded {self.provider} URL from database: {provider_url}")
+                    return provider_url
+                else:
+                    logger.warning(f"Invalid {self.provider} URL in database: {error_msg}. Using fallback.")
         except Exception as e:
             logger.debug(f"Could not load provider URL from database: {e}")
 

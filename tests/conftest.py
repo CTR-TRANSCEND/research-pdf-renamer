@@ -25,13 +25,16 @@ def app():
     """Create and configure a Flask application for testing."""
     from backend.app import create_app
     from backend.database import db as _db
+    import shutil
 
     # Create app with testing config (uses TestingConfig from backend.config)
     app = create_app("testing")
 
     # Set test-specific folders
-    app.config["UPLOAD_FOLDER"] = tempfile.mkdtemp()
-    app.config["DOWNLOAD_FOLDER"] = tempfile.mkdtemp()
+    upload_dir = tempfile.mkdtemp()
+    download_dir = tempfile.mkdtemp()
+    app.config["UPLOAD_FOLDER"] = upload_dir
+    app.config["DOWNLOAD_FOLDER"] = download_dir
 
     with app.app_context():
         _db.create_all()
@@ -39,6 +42,10 @@ def app():
 
         # Cleanup - within app context
         _db.drop_all()
+
+    # Cleanup temp directories
+    shutil.rmtree(upload_dir, ignore_errors=True)
+    shutil.rmtree(download_dir, ignore_errors=True)
 
 
 @pytest.fixture(scope="function")
