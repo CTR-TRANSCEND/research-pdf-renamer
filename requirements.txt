@@ -16,6 +16,8 @@ email-validator==2.1.0
 # DEP-001 FIX: Add email-validator for proper email validation
 gunicorn==23.0.0
 Flask-Limiter==3.8.0
+# SPEC-FEAT-001: Redis backend for rate limiting (optional, falls back to memory://)
+redis>=5.0.0
 cryptography==43.0.3
 httpx==0.28.1
 pytest>=8.0.0

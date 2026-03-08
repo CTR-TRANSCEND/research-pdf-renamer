@@ -6,6 +6,7 @@ from backend.config import config
 from backend.database import db
 from backend.models import User, SystemSettings
 from werkzeug.middleware.proxy_fix import ProxyFix
+import logging
 import os
 import jwt
 from datetime import datetime, timedelta, timezone
@@ -225,27 +226,36 @@ def create_app(config_name=None):
     # No manual exemption needed - Flask-WTF handles this correctly
 
     # Initialize Flask-Limiter for rate limiting
-    # PERF-001: Rate Limiting Storage Configuration
+    # SPEC-FEAT-001: Redis-backed rate limiting with graceful fallback
     #
-    # Current: Uses in-memory storage (storage_uri="memory://")
-    # - Pros: Simple, no external dependencies
-    # - Cons: Limits reset on application restart, not shared across multiple workers
+    # Storage backend is configured via RATE_LIMIT_STORAGE_URL env var:
+    # - Default (not set): memory:// — simple, no external dependencies
+    # - Redis:   redis://localhost:6379 — persistent, shared across workers
     #
-    # Production Recommendations:
-    # - For single-worker deployments: memory:// is acceptable
-    # - For multi-worker deployments: Use Redis or Memcached for shared state
-    # - Redis example: storage_uri="redis://localhost:6379"
-    # - Memcached example: storage_uri="memcached://localhost:11211"
-    #
-    # To enable persistent rate limiting across restarts:
-    # 1. Install Redis: pip install redis
-    # 2. Set RATE_LIMIT_STORAGE_URL environment variable
-    # 3. Update storage_uri to use: os.environ.get("RATE_LIMIT_STORAGE_URL", "memory://")
+    # Graceful fallback: if a redis:// URL is set but Redis is unreachable,
+    # the app logs a warning and falls back to memory:// instead of crashing.
+    _rate_limit_logger = logging.getLogger(__name__)
+    _storage_url = os.environ.get("RATE_LIMIT_STORAGE_URL", "memory://")
+
+    if _storage_url.startswith("redis://") or _storage_url.startswith("rediss://"):
+        try:
+            import redis as _redis
+
+            _client = _redis.Redis.from_url(_storage_url)
+            _client.ping()
+        except Exception as _exc:
+            _rate_limit_logger.warning(
+                "Rate limit Redis connection failed (%s). "
+                "Falling back to in-memory storage.",
+                _exc,
+            )
+            _storage_url = "memory://"
+
     limiter = Limiter(
         app=app,
         key_func=get_remote_address,
         default_limits=["200 per day", "50 per hour"],
-        storage_uri="memory://",
+        storage_uri=_storage_url,
         strategy="fixed-window",
     )
 
@@ -264,6 +274,21 @@ def create_app(config_name=None):
         return db.session.get(User, int(user_id))
 
     from backend.utils.auth import get_jwt_from_cookie, set_jwt_cookie, clear_jwt_cookie
+
+    @app.before_request
+    def _attach_request_id():
+        """Generate a UUID4 request_id and attach to flask.g for log correlation (REQ-OPS-003)."""
+        from backend.utils.structured_logging import generate_request_id
+
+        g.request_id = generate_request_id()
+
+    @app.after_request
+    def _record_request_metrics(response):
+        """Record request completion in MetricsCollector (REQ-OPS-002)."""
+        from backend.utils.metrics_collector import MetricsCollector
+
+        MetricsCollector.get_instance().record_request(response.status_code)
+        return response
 
     @app.before_request
     def _sync_auth_from_jwt_and_enforce_inactivity():

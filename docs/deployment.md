@@ -9,9 +9,10 @@ This guide covers production deployment of the Research PDF Renamer application.
 3. [Environment Variables](#environment-variables)
 4. [Production Installation](#production-installation)
 5. [Apache Configuration](#apache-configuration)
-6. [Systemd Service](#systemd-service)
-7. [Security Considerations](#security-considerations)
-8. [Troubleshooting](#troubleshooting)
+6. [HTTPS/TLS Setup](#httpstls-setup)
+7. [Systemd Service](#systemd-service)
+8. [Security Considerations](#security-considerations)
+9. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -331,19 +332,226 @@ The Apache configuration file includes:
 - **Compression**: mod_deflate for text content
 - **Logging**: Separate access/error logs
 
-### SSL/HTTPS Configuration
+---
 
-For production, enable HTTPS with Let's Encrypt:
+## HTTPS/TLS Setup
+
+This section covers enabling HTTPS using Let's Encrypt certificates managed by certbot.
+TLS termination happens at Apache; the Flask application code requires no changes.
+
+### Prerequisites
+
+Before proceeding, ensure:
+
+- The server has a registered **domain name** (IP addresses are not supported by Let's Encrypt)
+- **Port 80** is accessible from the internet for ACME HTTP-01 challenge validation
+- **Port 443** is open in the firewall for HTTPS traffic
+- Apache is already configured and serving the application over HTTP (see [Apache Configuration](#apache-configuration))
+
+### Step 1 — Install certbot
+
+certbot is the official Let's Encrypt client for obtaining and renewing certificates.
 
 ```bash
-# Install certbot
-sudo apt-get install certbot python3-certbot-apache
-
-# Obtain certificate
-sudo certbot --apache -d yourdomain.com
-
-# Auto-renewal is configured automatically
+sudo apt install certbot python3-certbot-apache
 ```
+
+Verify the installation:
+
+```bash
+certbot --version
+```
+
+### Step 2 — Obtain a Certificate
+
+Run certbot with the Apache plugin. Replace `your-domain.com` with your actual domain name.
+
+```bash
+sudo certbot --apache -d your-domain.com
+```
+
+certbot will:
+
+1. Verify domain ownership via HTTP-01 challenge (requires port 80 to be accessible)
+2. Download the certificate and private key to `/etc/letsencrypt/live/your-domain.com/`
+3. Optionally modify your Apache configuration (you can decline this and use the manual steps below)
+
+**Certificate file locations after issuance:**
+
+| File | Path | Purpose |
+|------|------|---------|
+| Full certificate chain | `/etc/letsencrypt/live/your-domain.com/fullchain.pem` | `SSLCertificateFile` |
+| Private key | `/etc/letsencrypt/live/your-domain.com/privkey.pem` | `SSLCertificateKeyFile` |
+
+### Step 3 — Deploy the SSL Configuration
+
+The project provides a pre-configured SSL VirtualHost file following the Mozilla Intermediate TLS profile.
+
+1. **Copy the SSL configuration:**
+
+```bash
+sudo cp /opt/pdf-renamer/apache-pdf-renamer-ssl.conf \
+    /etc/apache2/sites-available/pdf-renamer-ssl.conf
+```
+
+2. **Replace the domain placeholder:**
+
+```bash
+sudo sed -i 's/YOUR_DOMAIN/your-domain.com/g' \
+    /etc/apache2/sites-available/pdf-renamer-ssl.conf
+```
+
+3. **Configure the OCSP stapling cache** (required at the server level).
+   Add this line to `/etc/apache2/mods-enabled/ssl.conf` if it is not already present:
+
+```bash
+echo 'SSLStaplingCache shmcb:${APACHE_RUN_DIR}/stapling_cache(128000)' | \
+    sudo tee -a /etc/apache2/mods-enabled/ssl.conf
+```
+
+4. **Enable the required SSL module and site:**
+
+```bash
+sudo a2enmod ssl
+sudo a2ensite pdf-renamer-ssl.conf
+```
+
+5. **Update the HTTP VirtualHost to redirect to HTTPS.**
+   Edit `/etc/apache2/sites-available/pdf-renamer.conf` and update the `ServerName` directive
+   and uncomment the redirect block near the top of the file:
+
+```bash
+sudo nano /etc/apache2/sites-available/pdf-renamer.conf
+```
+
+Find and uncomment these lines (replace `YOUR_DOMAIN` with your domain):
+
+```apache
+# RewriteEngine On
+# RewriteCond %{REQUEST_URI} !^/\.well-known/acme-challenge/ [NC]
+# RewriteRule ^ https://YOUR_DOMAIN%{REQUEST_URI} [R=301,L]
+```
+
+6. **Test and reload Apache:**
+
+```bash
+sudo apache2ctl configtest
+sudo systemctl reload apache2
+```
+
+### Step 4 — Verify HTTPS
+
+Confirm the certificate is active and redirects work:
+
+```bash
+# Check the certificate
+openssl s_client -connect your-domain.com:443 -tls1_2 < /dev/null 2>/dev/null \
+    | openssl x509 -noout -subject -issuer -dates
+
+# Verify HTTP redirects to HTTPS
+curl -I http://your-domain.com/pdf-renamer/
+
+# Verify HTTPS responds correctly
+curl -I https://your-domain.com/pdf-renamer/
+```
+
+Expected results:
+- `curl -I http://...` returns `HTTP/1.1 301 Moved Permanently` with `Location: https://...`
+- `curl -I https://...` returns `HTTP/1.1 200 OK` (or a redirect to the login page)
+- Certificate issuer shows `Let's Encrypt`
+
+**Online verification tools:**
+
+- SSL Labs: `https://www.ssllabs.com/ssltest/analyze.html?d=your-domain.com`
+- Security Headers: `https://securityheaders.com/?q=your-domain.com`
+
+### Step 5 — Automatic Certificate Renewal
+
+Let's Encrypt certificates expire after 90 days. certbot installs a systemd timer that
+runs renewal checks twice daily automatically.
+
+**Verify the timer is active:**
+
+```bash
+sudo systemctl status certbot.timer
+```
+
+**Test renewal without actually renewing:**
+
+```bash
+sudo certbot renew --dry-run
+```
+
+A successful dry-run output ends with:
+
+```
+Congratulations, all simulated renewals succeeded.
+```
+
+**Manual renewal** (if needed):
+
+```bash
+sudo certbot renew
+sudo systemctl reload apache2
+```
+
+**Check renewal logs:**
+
+```bash
+sudo journalctl -u certbot.service
+```
+
+### TLS Configuration Details
+
+The `apache-pdf-renamer-ssl.conf` file implements the **Mozilla Intermediate profile**:
+
+| Setting | Value | Reason |
+|---------|-------|--------|
+| Minimum TLS version | TLSv1.2 | Disables POODLE/BEAST-vulnerable versions |
+| TLSv1.3 | Enabled | Improved performance and security |
+| OCSP Stapling | Enabled | Reduces handshake latency |
+| HSTS max-age | 31536000 (1 year) | Forces HTTPS for returning visitors |
+| HSTS includeSubDomains | Yes | Applies policy to all subdomains |
+| Cipher ordering | Server preference off | Allows TLSv1.3 to select best cipher |
+
+### Troubleshooting SSL Issues
+
+**Certificate not found:**
+
+```bash
+sudo ls -la /etc/letsencrypt/live/your-domain.com/
+```
+
+If the directory is missing, re-run `sudo certbot --apache -d your-domain.com`.
+
+**Port 80 blocked during validation:**
+
+Ensure your firewall allows inbound HTTP:
+
+```bash
+sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
+```
+
+**Apache fails to start after enabling SSL:**
+
+Check the error log for details:
+
+```bash
+sudo apache2ctl configtest
+sudo journalctl -u apache2 -n 30
+```
+
+Common causes:
+- `SSLStaplingCache` not configured at server level (see Step 3 above)
+- Certificate file paths in the config do not match `/etc/letsencrypt/live/YOUR_DOMAIN/`
+- `mod_ssl` not enabled (`sudo a2enmod ssl`)
+
+**HSTS locks out HTTP access:**
+
+HSTS tells browsers to remember to use HTTPS for 1 year. If you need to revert to HTTP-only,
+you must serve `Strict-Transport-Security: max-age=0` over HTTPS first to clear the browser's
+HSTS cache, then disable the SSL VirtualHost.
 
 ---
 
@@ -438,12 +646,26 @@ Default limits:
 - 200 requests per day
 - 50 requests per hour
 
-Configure Redis for multi-worker deployments:
-```bash
-pip install redis
-# Set in .env:
-RATE_LIMIT_STORAGE_URL=redis://localhost:6379
-```
+**Storage backend** (SPEC-FEAT-001):
+
+By default the application uses in-memory storage. Counters reset on restart and are not shared across worker processes.
+
+For production deployments with multiple workers, configure Redis:
+
+1. Ensure Redis is running:
+   ```bash
+   sudo apt-get install redis-server   # Debian/Ubuntu
+   sudo systemctl enable --now redis
+   ```
+
+2. Set the environment variable in `.env`:
+   ```
+   RATE_LIMIT_STORAGE_URL=redis://localhost:6379
+   ```
+
+3. The `redis` Python package is already included in `requirements.txt`.
+
+**Graceful fallback**: If `RATE_LIMIT_STORAGE_URL` points to Redis but the server is unreachable at startup, the application logs a warning and falls back to in-memory storage automatically. It will not crash or refuse to start.
 
 ### Security Headers
 
