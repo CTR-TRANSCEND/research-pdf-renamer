@@ -1,4 +1,4 @@
-import PyPDF2
+import pypdf
 import pdfplumber
 import re
 import hashlib
@@ -67,7 +67,7 @@ class PDFProcessor:
 
         except Exception as e:
             logger.error(f"Error processing PDF {os.path.basename(pdf_path)}: {e}")
-            # Fallback to PyPDF2 if pdfplumber fails
+            # Fallback to pypdf if pdfplumber fails
             return self._fallback_extraction(pdf_path)
 
     def _contains_abstract(self, text: str) -> bool:
@@ -137,13 +137,13 @@ class PDFProcessor:
         return text.strip()
 
     def _fallback_extraction(self, pdf_path: str) -> Tuple[str, int]:
-        """Fallback method using PyPDF2 with enhanced error handling."""
+        """Fallback method using pypdf with enhanced error handling."""
         text = ""
         pages_processed = 0
 
         try:
             with open(pdf_path, 'rb') as file:
-                pdf_reader = PyPDF2.PdfReader(file)
+                pdf_reader = pypdf.PdfReader(file)
 
                 # Extract first 3 pages (more than before for better coverage)
                 max_pages = min(3, len(pdf_reader.pages))
@@ -155,7 +155,7 @@ class PDFProcessor:
 
                         # Only add page text if it contains actual content
                         if page_text and page_text.strip():
-                            # Clean up common PyPDF2 artifacts
+                            # Clean up common PDF extraction artifacts
                             page_text = page_text.replace('\x00', '')  # Remove null bytes
                             page_text = page_text.replace('\n\n', '\n')  # Reduce excessive newlines
 
@@ -167,11 +167,11 @@ class PDFProcessor:
                                 break
 
                     except Exception as page_error:
-                        logger.warning(f"PyPDF2 failed to extract page {i+1}: {page_error}")
+                        logger.warning(f"pypdf failed to extract page {i+1}: {page_error}")
                         continue
 
         except Exception as e:
-            logger.error(f"PyPDF2 fallback extraction failed: {e}")
+            logger.error(f"pypdf fallback extraction failed: {e}")
             return "", 0
 
         # Clean up the final text
@@ -208,7 +208,7 @@ class PDFProcessor:
         """Get basic PDF info without full processing."""
         try:
             with open(pdf_path, 'rb') as file:
-                pdf_reader = PyPDF2.PdfReader(file)
+                pdf_reader = pypdf.PdfReader(file)
                 return {
                     'pages': len(pdf_reader.pages),
                     'encrypted': pdf_reader.is_encrypted,
@@ -219,7 +219,7 @@ class PDFProcessor:
             return None
 
     def _extract_sequential(self, pdf_path: str) -> Tuple[str, int, bool, bool]:
-        """Extract text sequentially from PDF pages with PyPDF2 fallback."""
+        """Extract text sequentially from PDF pages with pypdf fallback."""
         text_content = ""
         pages_processed = 0
         found_abstract = False
@@ -256,17 +256,17 @@ class PDFProcessor:
                     # Stop after second page if we still don't have what we need
                     break
 
-        # If pdfplumber failed completely or got minimal text, try PyPDF2
+        # If pdfplumber failed completely or got minimal text, try pypdf
         if pages_processed == 0 or len(text_content.strip()) < 100:
-            logger.warning(f"pdfplumber extraction was insufficient, trying PyPDF2 fallback")
+            logger.warning(f"pdfplumber extraction was insufficient, trying pypdf fallback")
             fallback_text, fallback_pages = self._fallback_extraction(pdf_path)
 
             if fallback_text and len(fallback_text.strip()) > len(text_content.strip()):
                 text_content = fallback_text
                 pages_processed = fallback_pages
-                logger.info(f"PyPDF2 fallback extracted {len(fallback_text)} characters from {fallback_pages} pages")
+                logger.info(f"pypdf fallback extracted {len(fallback_text)} characters from {fallback_pages} pages")
             else:
-                logger.warning("PyPDF2 fallback also failed or produced less text")
+                logger.warning("pypdf fallback also failed or produced less text")
 
         return text_content, pages_processed, found_abstract, found_required_info
 
@@ -414,9 +414,9 @@ class PDFProcessor:
                 if magic != b'%PDF':
                     return False
 
-                # Quick validation with PyPDF2
+                # Quick validation with pypdf
                 file.seek(0)
-                pdf_reader = PyPDF2.PdfReader(file)
+                pdf_reader = pypdf.PdfReader(file)
                 return len(pdf_reader.pages) > 0
         except Exception as e:
             logger.error(f"PDF validation error: {e}")
