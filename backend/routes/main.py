@@ -89,8 +89,46 @@ def profile():
 
 @main.route("/api/health")
 def health_check():
-    """Health check endpoint."""
-    return jsonify({"status": "healthy", "version": "1.0.0"})
+    """Health check endpoint with uptime, db status, and dependency info (REQ-OPS-001)."""
+    from backend.utils.metrics_collector import MetricsCollector
+    from backend.utils.db_health import check_database_health
+
+    # Application version
+    try:
+        from backend import __version__
+        version = __version__
+    except ImportError:
+        version = "0.2.1"
+
+    # Uptime in seconds
+    collector = MetricsCollector.get_instance()
+    uptime_seconds = collector.get_uptime()
+
+    # Database status
+    db_health = check_database_health()
+    db_status = {
+        "status": db_health.get("status", "unknown"),
+        "responsive": db_health.get("database_responsive", False),
+        "response_time_ms": db_health.get("response_time_ms"),
+    }
+
+    # Dependency summary
+    dependencies = {
+        "database": db_status["status"],
+    }
+
+    # Overall status: degraded if any dependency is unhealthy
+    overall_status = "healthy"
+    if db_status["status"] not in ("healthy",):
+        overall_status = "degraded" if db_status["responsive"] else "error"
+
+    return jsonify({
+        "status": overall_status,
+        "version": version,
+        "uptime_seconds": round(uptime_seconds, 2),
+        "db_status": db_status,
+        "dependencies": dependencies,
+    })
 
 
 @main.route("/admin")

@@ -220,6 +220,28 @@ def upload_files():
                 path = future_to_file[future]
                 errors.append(f"{path}: Processing error - {str(e)}")
 
+        # Record upload metrics (REQ-OPS-005)
+        try:
+            from backend.utils.metrics_collector import MetricsCollector
+
+            _metrics = MetricsCollector.get_instance()
+            for file_info in processed_files:
+                # Measure size from the download path if possible, default 0
+                _size = 0
+                try:
+                    _download_filepath = os.path.join(
+                        file_svc.upload_folder, "downloads", file_info["download_path"]
+                    )
+                    if os.path.exists(_download_filepath):
+                        _size = os.path.getsize(_download_filepath)
+                except Exception:
+                    pass
+                _metrics.record_upload(size_bytes=_size, success=True)
+            for _ in errors:
+                _metrics.record_upload(size_bytes=0, success=False)
+        except Exception:
+            pass  # Never let metrics recording break the upload flow
+
         # Return results
         if not processed_files and errors:
             return jsonify(

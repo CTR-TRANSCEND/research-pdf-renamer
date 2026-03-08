@@ -201,6 +201,8 @@ class LLMService:
         Extract metadata from research paper text.
         Returns tuple of (metadata_dict, error_type).
         """
+        import time as _time
+
         # Validate input text
         if not text or not text.strip():
             return None, ExtractionError.TEXT_TOO_SHORT
@@ -217,26 +219,40 @@ class LLMService:
                 f"Text truncated to {self.max_text_length} characters for extraction"
             )
 
+        _start = _time.monotonic()
         try:
             if self.provider == "openai":
-                return self._extract_with_openai(text, user_preferences)
+                result, error = self._extract_with_openai(text, user_preferences)
             elif self.provider == "ollama":
-                return self._extract_with_ollama(text, user_preferences)
+                result, error = self._extract_with_ollama(text, user_preferences)
             elif self.provider == "openai-compatible":
                 # OpenAI-compatible servers use the same extraction logic as Ollama with server type detection
-                return self._extract_with_ollama(text, user_preferences)
+                result, error = self._extract_with_ollama(text, user_preferences)
             elif self.provider == "lm-studio":
                 # LM Studio uses OpenAI-compatible endpoints
-                return self._extract_with_ollama(text, user_preferences)
+                result, error = self._extract_with_ollama(text, user_preferences)
             else:
                 logger.error(f"Unsupported LLM provider: {self.provider}")
-                return None, ExtractionError.SERVICE_UNAVAILABLE
+                result, error = None, ExtractionError.SERVICE_UNAVAILABLE
 
         except Exception as e:
             logger.error(
                 f"Unexpected error during metadata extraction: {type(e).__name__}: {str(e)}"
             )
-            return None, ExtractionError.UNKNOWN_ERROR
+            result, error = None, ExtractionError.UNKNOWN_ERROR
+
+        # Record LLM call metrics (REQ-OPS-004)
+        _duration_ms = (_time.monotonic() - _start) * 1000
+        try:
+            from backend.utils.metrics_collector import MetricsCollector
+
+            MetricsCollector.get_instance().record_llm_call(
+                duration_ms=_duration_ms, success=(error is None)
+            )
+        except Exception:
+            pass  # Never let metrics recording break the main flow
+
+        return result, error
 
     def _extract_with_openai(
         self, text: str, user_preferences: Optional[Dict] = None

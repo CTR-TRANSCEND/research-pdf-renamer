@@ -1665,6 +1665,16 @@ def update_user_limits(user_id):
         return jsonify({"error": f"Failed to update user limits: {str(e)}"}), 500
 
 
+@admin.route("/metrics", methods=["GET"])
+@admin_required
+def get_metrics():
+    """Get operational metrics (REQ-OPS-002)."""
+    from backend.utils.metrics_collector import MetricsCollector
+
+    collector = MetricsCollector.get_instance()
+    return jsonify(collector.get_metrics())
+
+
 @admin.route("/db-health", methods=["GET"])
 @admin_required
 def get_database_health():
