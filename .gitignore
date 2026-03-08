@@ -285,9 +285,6 @@ temp/
 !.moai/announcements/
 .moai/scripts/phase*.sh
 .moai/work/
-
-# ===========================================
-# MoAI & Claude Code Directories (exclude entirely)
-# ===========================================
+archive/
 .moai/
 .claude/
