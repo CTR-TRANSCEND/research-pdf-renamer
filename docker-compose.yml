@@ -1,0 +1,30 @@
+services:
+  pdf-renamer:
+    build: .
+    ports:
+      - "5000:5000"
+    env_file:
+      - .env
+    environment:
+      - FLASK_ENV=production
+      - ALLOW_PRIVATE_IPS=true
+      - TALISMAN_FORCE_HTTPS=false
+    volumes:
+      - pdf-data:/app/instance
+      - pdf-uploads:/app/uploads
+      - pdf-temp:/app/temp
+    restart: unless-stopped
+
+  # Optional: Redis for persistent rate limiting
+  # Uncomment to enable
+  # redis:
+  #   image: redis:7-alpine
+  #   volumes:
+  #     - redis-data:/data
+  #   restart: unless-stopped
+
+volumes:
+  pdf-data:
+  pdf-uploads:
+  pdf-temp:
+  # redis-data:

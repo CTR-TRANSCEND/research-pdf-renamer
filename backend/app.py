@@ -197,7 +197,7 @@ def create_app(config_name=None):
     # Determine if HTTPS enforcement should be enabled.
     # Use the app config/debug flags rather than raw env vars to avoid
     # mismatches (e.g., FLASK_ENV unset => dev config but prod Talisman).
-    force_https = not (app.debug or app.testing)
+    force_https = not (app.debug or app.testing) and os.environ.get("TALISMAN_FORCE_HTTPS", "true").lower() != "false"
     cookie_secure = force_https or bool(app.config.get("SESSION_COOKIE_SECURE", False))
     cookie_samesite = app.config.get("SESSION_COOKIE_SAMESITE", "Lax")
 
