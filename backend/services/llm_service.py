@@ -44,6 +44,14 @@ class PaperMetadata(BaseModel):
     journal: str = Field(..., min_length=1, description="Journal name")
     title: str = Field(..., min_length=1, description="Paper title")
     keywords: str = Field(..., min_length=1, description="Comma-separated keywords")
+
+    @field_validator("keywords", mode="before")
+    @classmethod
+    def coerce_keywords(cls, v):
+        """Accept keywords as list or string — LLMs often return arrays."""
+        if isinstance(v, list):
+            return ", ".join(str(k) for k in v)
+        return v
     suggested_filename: str = Field(..., min_length=1, description="Generated filename")
 
     @field_validator("year")
@@ -453,25 +461,46 @@ class LLMService:
             max_tokens = 500
 
         try:
-            # Call OpenAI-compatible completions endpoint using shared client
-            response = http_client.post(
-                f"{base_url}/v1/completions",
-                headers=headers,
-                json={
-                    "model": self.model,
-                    "prompt": prompt,
-                    "temperature": 0.0,
-                    "max_tokens": max_tokens,
-                },
-                timeout=self.request_timeout,
-            )
+            # Use chat/completions for LM Studio (chat models), completions for others
+            if self.provider == "lm-studio":
+                response = http_client.post(
+                    f"{base_url}/v1/chat/completions",
+                    headers=headers,
+                    json={
+                        "model": self.model,
+                        "messages": [
+                            {"role": "system", "content": "You are a research paper metadata extractor. Respond with ONLY valid JSON, no explanation."},
+                            {"role": "user", "content": prompt},
+                        ],
+                        "temperature": 0.0,
+                        "max_tokens": max_tokens,
+                    },
+                    timeout=self.request_timeout,
+                )
+            else:
+                response = http_client.post(
+                    f"{base_url}/v1/completions",
+                    headers=headers,
+                    json={
+                        "model": self.model,
+                        "prompt": prompt,
+                        "temperature": 0.0,
+                        "max_tokens": max_tokens,
+                    },
+                    timeout=self.request_timeout,
+                )
 
             response.raise_for_status()
             result = response.json()
 
-            # Extract the response text from OpenAI-compatible format
+            # Extract response text from the appropriate format
             if "choices" in result and len(result["choices"]) > 0:
-                response_text = result["choices"][0].get("text", "")
+                choice = result["choices"][0]
+                # chat/completions returns message.content, completions returns text
+                if "message" in choice:
+                    response_text = choice["message"].get("content", "")
+                else:
+                    response_text = choice.get("text", "")
             else:
                 logger.error("OpenAI-compatible response missing choices array")
                 return None, ExtractionError.INVALID_RESPONSE
