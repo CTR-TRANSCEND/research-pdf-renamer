@@ -167,8 +167,22 @@ class LLMService:
         )
 
     def _load_context_window(self) -> int:
-        """Load context window setting for LM Studio (default 4096)."""
+        """Load context window for the current model.
+
+        For LM Studio, queries the server's native API (/api/v0/models) to get
+        the actual max_context_length for the selected model. Falls back to the
+        DB setting, then to a safe default.
+        """
         if self.provider == "lm-studio":
+            # Try to get context window from LM Studio API (per-model, authoritative)
+            try:
+                context = self._query_lm_studio_context_window()
+                if context:
+                    return context
+            except Exception as e:
+                logger.debug(f"Could not query LM Studio for context window: {e}")
+
+            # Fallback to DB setting
             try:
                 from backend.models import SystemSettings
 
@@ -178,6 +192,29 @@ class LLMService:
             except Exception as e:
                 logger.debug(f"Could not load context window setting: {e}")
         return 4096  # Default context window
+
+    def _query_lm_studio_context_window(self) -> int | None:
+        """Query LM Studio native API for the selected model's max context length."""
+        import httpx
+
+        base_url = self.provider_url.rstrip("/")
+        if base_url.endswith("/v1"):
+            base_url = base_url[:-3]
+
+        try:
+            resp = httpx.get(f"{base_url}/api/v0/models", timeout=5)
+            if resp.status_code == 200:
+                for model_info in resp.json().get("data", []):
+                    if model_info.get("id") == self.model:
+                        ctx = model_info.get("max_context_length")
+                        if ctx:
+                            logger.info(
+                                f"LM Studio reports max_context_length={ctx} for {self.model}"
+                            )
+                            return int(ctx)
+        except Exception as e:
+            logger.debug(f"LM Studio /api/v0/models query failed: {e}")
+        return None
 
     def _load_provider_url(self) -> str:
         """Load provider-specific server URL from database with fallback to config/env."""
