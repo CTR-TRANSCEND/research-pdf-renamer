@@ -1,6 +1,10 @@
 # Research PDF File Renamer
 
-A web application that automatically renames academic research PDF files using AI-powered metadata extraction. Upload your papers, and the system extracts author, year, journal, and keywords to generate standardized filenames.
+Managing large collections of research papers often means dealing with unhelpful filenames like `document.pdf`, `1-s2.0-S0123456789.pdf`, or `manuscript_final_v3.pdf`. Manually renaming each file by looking up author names, publication years, and journal titles is tedious and error-prone, especially when working with dozens or hundreds of papers across multiple research projects.
+
+Research PDF File Renamer solves this problem by using large language models (LLMs) to automatically extract bibliographic metadata from your PDF files. Simply upload your papers through the drag-and-drop web interface, and the system reads the first one to two pages of each document, sends the extracted text to an AI model of your choice, and parses the response to identify the first author, publication year, journal name, and relevant keywords. The files are then renamed into a clean, standardized format such as `Author_Year_Journal_Keywords.pdf` and returned for download -- as individual files or as a ZIP archive for batch uploads.
+
+The application supports multiple LLM providers including OpenAI, LM Studio, Ollama, and any OpenAI-compatible API server, making it suitable for both cloud-based and fully local, privacy-conscious deployments. It includes a complete user management system with registration, admin approval workflows, role-based access controls, and per-user upload limits. An admin dashboard provides system monitoring, LLM configuration, and user management capabilities. Deployment options range from a single Docker command to a production-grade systemd + Apache reverse proxy setup with SSL/TLS support.
 
 ![Main Page](docs/screenshots/01_main_page.png)
 
