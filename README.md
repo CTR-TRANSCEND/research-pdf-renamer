@@ -76,7 +76,7 @@ All 198 tests passing. Commit dab6c91.
 
 ```bash
 # Clone the repository
-git clone https://github.com/hurlab/research-pdf-renamer.git
+git clone https://github.com/CTR-TRANSCEND/research-pdf-renamer.git
 cd ResearchPDFFileRenamerGLM
 
 # Run the setup script
@@ -286,7 +286,7 @@ For production deployment, use the provided installation script:
 
 ```bash
 # Clone the repository
-git clone https://github.com/hurlab/research-pdf-renamer.git
+git clone https://github.com/CTR-TRANSCEND/research-pdf-renamer.git
 cd research-pdf-renamer
 
 # Run production installation
