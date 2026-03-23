@@ -234,6 +234,7 @@ test-results/
 test_final/
 test_v2/
 screenshots/
+!docs/screenshots/
 debug_screenshots/
 test_screenshots/
 coverage.xml
