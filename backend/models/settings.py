@@ -71,7 +71,9 @@ class SystemSettings(db.Model):
         """
         from flask import current_app
 
-        secret_key = current_app.config.get("SECRET_KEY", "default-secret-key")
+        secret_key = current_app.config.get("SECRET_KEY")
+        if not secret_key:
+            raise RuntimeError("SECRET_KEY must be configured for API key encryption")
 
         if legacy:
             if cls._legacy_cipher is None:

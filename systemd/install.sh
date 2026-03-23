@@ -174,7 +174,7 @@ create_env_file() {
 # Flask Configuration
 FLASK_APP=backend.app:create_app
 FLASK_ENV=production
-SECRET_KEY=CHANGE_THIS_TO_RANDOM_STRING
+SECRET_KEY=$(python3 -c 'import secrets; print(secrets.token_hex(32))')
 
 # Database Configuration (default: SQLite)
 # For PostgreSQL: postgresql://user:password@localhost/dbname

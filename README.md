@@ -266,3 +266,5 @@ MIT License
 ---
 
 Developed by [Dr. Junguk Hur](https://med.und.edu/research/labs/hur/index.html), Associate Professor, University of North Dakota School of Medicine and Health Sciences
+
+*Last updated: March 22, 2026*
