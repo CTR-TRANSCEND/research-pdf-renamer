@@ -92,12 +92,7 @@ elif [ -d ".venv" ]; then
     echo "Activating virtual environment..."
     source .venv/bin/activate
 else
-    echo "Error: No Python environment found."
-    echo ""
-    echo "Please either:"
-    echo "1. Activate a conda environment: conda activate <env-name>"
-    echo "2. Create a conda environment: conda create -n pdf-renamer python=3.12"
-    echo "3. Run setup.sh to create a virtual environment"
+    echo "Error: No Python environment found. Run ./setup.sh first."
     exit 1
 fi
 

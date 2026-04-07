@@ -455,6 +455,27 @@ def create_app(config_name=None):
                 "ADMIN_CREATE is set but ADMIN_PASSWORD is not provided. Skipping admin creation."
             )
 
+        # Auto-create admin on first startup if no users exist
+        if not app.testing and User.query.count() == 0:
+            import secrets
+
+            auto_password = secrets.token_urlsafe(12)
+            auto_admin = User(
+                email="admin@local",
+                name="Administrator",
+                is_admin=True,
+                is_approved=True,
+            )
+            auto_admin.set_password(auto_password)
+            db.session.add(auto_admin)
+            db.session.commit()
+            logger.info("=" * 50)
+            logger.info("AUTO-CREATED ADMIN ACCOUNT")
+            logger.info(f"  Email:    admin@local")
+            logger.info(f"  Password: {auto_password}")
+            logger.info("  Change this password after first login!")
+            logger.info("=" * 50)
+
     # Template context processor for version
     @app.context_processor
     def inject_version():

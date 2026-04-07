@@ -34,6 +34,10 @@ EXPOSE 5000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:5000/api/health')" || exit 1
 
+LABEL org.opencontainers.image.source="https://github.com/CTR-TRANSCEND/research-pdf-renamer"
+LABEL org.opencontainers.image.description="Research PDF File Renamer - AI-powered PDF renaming tool"
+LABEL org.opencontainers.image.licenses="MIT"
+
 # Run with gunicorn
 CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "3", "--threads", "4", \
      "--worker-class", "gthread", "--timeout", "300", "--access-logfile", "-", \

@@ -146,61 +146,45 @@ if ! command -v python3 &> /dev/null; then
 fi
 
 # ==============================================
-# Conda Environment Check (Mandatory)
+# Python Environment Detection
 # ==============================================
 
-if [ -z "$CONDA_DEFAULT_ENV" ]; then
-    # Not in any conda environment
-    echo -e "${RED}Error: Not in a conda environment${NC}"
-    echo ""
-    echo "This script requires a conda environment (not 'base')."
-    echo ""
-    echo "Options:"
-    echo "1. Create and activate a new conda environment:"
-    echo "   conda create -n pdf-renamer python=3.12"
-    echo "   conda activate pdf-renamer"
-    echo "   ./setup.sh"
-    echo ""
-    echo "2. Activate an existing conda environment:"
-    echo "   conda activate <your-env-name>"
-    echo "   ./setup.sh"
-    exit 1
-elif [ "$CONDA_DEFAULT_ENV" = "base" ]; then
-    # In base environment - not allowed
-    echo -e "${RED}Error: You are in the 'base' conda environment${NC}"
-    echo ""
-    echo "Using the 'base' environment is not recommended to avoid conflicts."
-    echo ""
-    echo "Would you like to create a dedicated environment?"
-    read -p "$(echo -e "${YELLOW}Create new conda environment 'pdf-renamer'? (y/n): ${NC}")" -n 1 -r
-    echo ""
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        ENV_NAME="pdf-renamer"
-        echo -e "${GREEN}Creating conda environment '${ENV_NAME}' with Python 3.12...${NC}"
-        conda create -n "$ENV_NAME" python=3.12 -y
-        echo ""
-        echo -e "${GREEN}Environment created! Please activate it and run setup again:${NC}"
-        echo "  conda activate $ENV_NAME"
-        echo "  ./setup.sh"
-        exit 0
-    else
-        echo -e "${YELLOW}Please activate a non-base conda environment and run setup again:${NC}"
-        echo "  conda create -n pdf-renamer python=3.12"
-        echo "  conda activate pdf-renamer"
-        echo "  ./setup.sh"
+if [ -n "$CONDA_DEFAULT_ENV" ] && [ "$CONDA_DEFAULT_ENV" != "base" ]; then
+    # In a non-base conda environment — use it
+    echo -e "${GREEN}Using conda environment: ${CONDA_DEFAULT_ENV}${NC}"
+elif [ -n "$CONDA_DEFAULT_ENV" ] && [ "$CONDA_DEFAULT_ENV" = "base" ]; then
+    # In base conda — warn but allow
+    echo -e "${YELLOW}Warning: You are in the 'base' conda environment.${NC}"
+    echo -e "${YELLOW}Consider using a dedicated environment to avoid conflicts.${NC}"
+    echo -e "${YELLOW}Proceeding with 'base' environment...${NC}"
+elif [ -n "$VIRTUAL_ENV" ]; then
+    # Already in an activated venv
+    echo -e "${GREEN}Using active virtual environment: ${VIRTUAL_ENV}${NC}"
+elif [ -d "venv" ]; then
+    echo -e "${GREEN}Activating existing venv...${NC}"
+    source venv/bin/activate
+elif [ -d ".venv" ]; then
+    echo -e "${GREEN}Activating existing .venv...${NC}"
+    source .venv/bin/activate
+else
+    echo -e "${YELLOW}No Python environment found. Creating .venv...${NC}"
+    python3 -m venv .venv
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}Failed to create virtual environment.${NC}"
+        echo "You may need to install the python3-venv package:"
+        echo "  sudo apt install python3-venv"
         exit 1
     fi
-else
-    echo -e "${GREEN}Using conda environment: ${CONDA_DEFAULT_ENV}${NC}"
+    source .venv/bin/activate
+    echo -e "${GREEN}Created and activated .venv${NC}"
 fi
 echo ""
 
 # ==============================================
-# Python Environment Setup (Conda-Aware)
+# Python Environment Setup
 # ==============================================
 
-# We're in a conda environment (non-base), use it directly
-echo -e "${GREEN}Installing packages in current conda environment (${CONDA_DEFAULT_ENV})${NC}"
+echo -e "${GREEN}Installing packages in current Python environment${NC}"
 echo ""
 
 # Upgrade pip

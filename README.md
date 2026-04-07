@@ -20,21 +20,34 @@ The application supports multiple LLM providers including OpenAI, LM Studio, Oll
 
 ## Quick Start
 
-### Prerequisites
+### Option 1: Docker -- Zero Config (Recommended)
 
-- Python 3.10+ (or Docker)
-- An LLM provider: OpenAI API key, LM Studio, or Ollama
-
-### Option 1: Docker (Recommended)
+No `.env` file needed. Includes a built-in Ollama LLM server that auto-downloads a model on first start.
 
 ```bash
 git clone https://github.com/CTR-TRANSCEND/research-pdf-renamer.git
 cd research-pdf-renamer
-cp .env.example .env    # Edit with your settings
 docker compose up -d
 ```
 
-### Option 2: Local Installation
+Open http://localhost:5000 and log in with the default admin credentials below. The first startup takes a few minutes while the AI model downloads (~2 GB).
+
+### Option 2: Pre-built Docker Image
+
+No need to clone the repository. Requires your own LLM provider (OpenAI API key or local Ollama).
+
+```bash
+# With OpenAI
+docker run -p 5000:5000 -e OPENAI_API_KEY=sk-... ghcr.io/ctr-transcend/research-pdf-renamer
+
+# With local Ollama (already running on host)
+docker run -p 5000:5000 -e LLM_PROVIDER=ollama -e OLLAMA_URL=http://host.docker.internal:11434 \
+  ghcr.io/ctr-transcend/research-pdf-renamer
+```
+
+### Option 3: Local Installation
+
+Works with any Python 3.10+ environment (conda, venv, or system Python). The setup script auto-creates a virtual environment if needed.
 
 ```bash
 git clone https://github.com/CTR-TRANSCEND/research-pdf-renamer.git
@@ -43,16 +56,18 @@ cd research-pdf-renamer
 ./start.sh
 ```
 
+On first startup with no existing users, the app auto-creates an admin account and prints the credentials to the console.
+
 Access the application at http://localhost:5000
 
-### Default Admin Account
+### Default Admin Account (Docker)
 
 | | |
 |---|---|
-| **Email** | `admin@example.com` |
-| **Password** | `admin123` |
+| **Email** | `admin@local` |
+| **Password** | `changeme123` |
 
-> **Important:** Change the default credentials in production.
+> **Important:** Change the default credentials after first login. For local installations (Option 3), credentials are auto-generated and printed to the console on first startup.
 
 ---
 
@@ -265,7 +280,7 @@ research-pdf-renamer/
 
 ## License
 
-MIT License
+MIT License. See [LICENSE](LICENSE) for details.
 
 ---
 

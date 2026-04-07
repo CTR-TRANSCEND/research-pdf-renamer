@@ -1,19 +1,62 @@
+# =============================================================================
+# Research PDF File Renamer - Docker Compose (Zero-Config)
+# =============================================================================
+# Just run:  git clone <repo> && cd research-pdf-renamer && docker compose up -d
+#
+# Default admin credentials (change after first login):
+#   Email:    admin@local
+#   Password: changeme123
+#
+# Web UI:  http://localhost:5000
+# =============================================================================
+
 services:
   pdf-renamer:
     build: .
     ports:
       - "5000:5000"
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
       - FLASK_ENV=production
-      - ALLOW_PRIVATE_IPS=true
       - TALISMAN_FORCE_HTTPS=false
+      - ALLOW_PRIVATE_IPS=true
+      - LLM_PROVIDER=ollama
+      - OLLAMA_URL=http://ollama:11434
+      - ADMIN_CREATE=true
+      - ADMIN_EMAIL=admin@local
+      - ADMIN_PASSWORD=changeme123
     volumes:
       - pdf-data:/app/instance
       - pdf-uploads:/app/uploads
       - pdf-temp:/app/temp
+    depends_on:
+      ollama:
+        condition: service_healthy
     restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama
+    volumes:
+      - ollama-data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  ollama-pull:
+    image: ollama/ollama
+    depends_on:
+      ollama:
+        condition: service_healthy
+    entrypoint: ["ollama", "pull", "llama3.2:3b"]
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+    restart: "no"
 
   # Optional: Redis for persistent rate limiting
   # Uncomment to enable
@@ -27,4 +70,5 @@ volumes:
   pdf-data:
   pdf-uploads:
   pdf-temp:
+  ollama-data:
   # redis-data:
