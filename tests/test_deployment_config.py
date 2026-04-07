@@ -40,7 +40,11 @@ class TestAllowPrivateIPsConfiguration:
 
         for env_value, expected in test_cases:
             if env_value is None:
-                result = os.environ.get("ALLOW_PRIVATE_IPS", "false").lower() == "true"
+                # Patch os.environ to remove ALLOW_PRIVATE_IPS so the
+                # default value ("false") is used, regardless of .env
+                with patch.dict(os.environ, {}, clear=False):
+                    os.environ.pop("ALLOW_PRIVATE_IPS", None)
+                    result = os.environ.get("ALLOW_PRIVATE_IPS", "false").lower() == "true"
             else:
                 result = env_value.lower() == "true" if env_value else "false".lower() == "true"
             assert result == expected, f"ALLOW_PRIVATE_IPS={env_value!r} should be {expected}, got {result}"

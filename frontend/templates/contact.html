@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+
+{% block title %}Contact - Research PDF File Renamer{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto">
+    <div class="bg-white shadow-lg rounded-lg">
+        <!-- Header -->
+        <div class="px-6 py-8 border-b border-gray-200">
+            <h1 class="text-3xl font-bold text-gray-900">Contact Us</h1>
+            <p class="mt-2 text-gray-600">Get in touch with the Research PDF File Renamer team</p>
+        </div>
+
+        <!-- Content -->
+        <div class="px-6 py-8">
+            <div class="prose max-w-none">
+                <h2 class="text-2xl font-semibold text-gray-900 mb-4">How to Reach Us</h2>
+                <p class="mb-6 text-gray-700">
+                    If you have questions, feedback, or need assistance with Research PDF File Renamer,
+                    please feel free to reach out using the contact information below.
+                </p>
+
+                <div class="bg-gray-50 p-6 rounded-lg mb-8">
+                    <div class="space-y-4">
+                        <div class="flex items-start">
+                            <i class="fas fa-envelope text-indigo-600 mt-1 mr-4 w-5 text-center"></i>
+                            <div>
+                                <p class="font-semibold text-gray-900">Email</p>
+                                <p class="text-gray-700">
+                                    {% if contact_email %}
+                                        <a href="mailto:{{ contact_email }}" class="text-indigo-600 hover:text-indigo-800">{{ contact_email }}</a>
+                                    {% else %}
+                                        <em class="text-gray-500">Not configured</em>
+                                    {% endif %}
+                                </p>
+                            </div>
+                        </div>
+                        <div class="flex items-start">
+                            <i class="fab fa-github text-indigo-600 mt-1 mr-4 w-5 text-center"></i>
+                            <div>
+                                <p class="font-semibold text-gray-900">GitHub</p>
+                                <p class="text-gray-700">
+                                    <a href="https://github.com/CTR-TRANSCEND/research-pdf-renamer" target="_blank" rel="noopener noreferrer"
+                                       class="text-indigo-600 hover:text-indigo-800">
+                                        CTR-TRANSCEND/research-pdf-renamer
+                                    </a>
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <h2 class="text-2xl font-semibold text-gray-900 mb-4">Report Issues</h2>
+                <p class="mb-6 text-gray-700">
+                    Found a bug or have a feature request? Please open an issue on our
+                    <a href="https://github.com/CTR-TRANSCEND/research-pdf-renamer/issues" target="_blank" rel="noopener noreferrer"
+                       class="text-indigo-600 hover:text-indigo-800">GitHub Issues</a> page.
+                </p>
+
+                <h2 class="text-2xl font-semibold text-gray-900 mb-4">About the Project</h2>
+                <p class="mb-6 text-gray-700">
+                    Research PDF File Renamer is a free, web-based tool designed to help researchers and students
+                    organize their PDF documents by automatically generating descriptive filenames based on the
+                    content of academic papers. The service uses artificial intelligence to extract metadata such as
+                    author names, publication year, journal titles, and keywords from PDF documents.
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

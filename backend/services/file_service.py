@@ -235,7 +235,7 @@ class FileService:
                             try:
                                 os.remove(filepath)
                             except Exception as e:
-                                print(f"Error removing file {filepath}: {e}")
+                                logger.error(f"Error removing file {filepath}: {e}")
 
     def get_file_size(self, filepath: str) -> int:
         """Get file size in bytes."""

@@ -1365,8 +1365,9 @@ def test_ollama_connection():
             }
         ), 400
     except Exception as e:
+        logger.error(f"Connection test failed: {e}")
         return jsonify(
-            {"success": False, "error": f"Connection test failed: {str(e)}"}
+            {"success": False, "error": "Connection test failed. Check server logs for details."}
         ), 400
 
 
@@ -1476,7 +1477,8 @@ def save_api_key():
         )
 
     except Exception as e:
-        return jsonify({"error": f"Failed to save API key: {str(e)}"}), 500
+        logger.error(f"Failed to save API key for provider {provider}: {e}")
+        return jsonify({"error": "Failed to save API key"}), 500
 
 
 @admin.route("/system-status")
@@ -1484,6 +1486,7 @@ def save_api_key():
 def system_status():
     """Get system status and health information."""
     from datetime import datetime
+    from backend import __version__
     import os
     import sys
 
@@ -1495,7 +1498,8 @@ def system_status():
         db_error = None
     except Exception as e:
         db_status = "error"
-        db_error = str(e)
+        db_error = "Database connection failed"
+        logger.error(f"Database health check failed: {e}")
 
     # LLM service status
     llm_status = "unknown"
@@ -1577,7 +1581,7 @@ def system_status():
     system_info = {
         "python_version": sys.version,
         "environment": os.environ.get("FLASK_ENV", "development"),
-        "app_version": "1.0.0",
+        "app_version": __version__,
     }
 
     return jsonify(
@@ -1622,7 +1626,8 @@ def toggle_user_admin(user_id):
 
     except Exception as e:
         db.session.rollback()
-        return jsonify({"error": str(e)}), 500
+        logger.error(f"Failed to toggle admin status for user {user_id}: {e}")
+        return jsonify({"error": "Failed to update admin status"}), 500
 
 
 @admin.route("/users/<int:user_id>/limits", methods=["PUT"])
@@ -1662,7 +1667,8 @@ def update_user_limits(user_id):
         )
 
     except Exception as e:
-        return jsonify({"error": f"Failed to update user limits: {str(e)}"}), 500
+        logger.error(f"Failed to update user limits for user {user_id}: {e}")
+        return jsonify({"error": "Failed to update user limits"}), 500
 
 
 @admin.route("/metrics", methods=["GET"])

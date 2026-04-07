@@ -869,53 +869,6 @@ Rules for filename:
             logger.debug(f"Invalid parsed data: {parsed_data}")
             return None
 
-    def _manual_parse_response(self, content: str) -> Optional[Dict]:
-        """Manually parse response when JSON parsing fails."""
-        result = {}
-
-        # Look for common patterns in the response
-        patterns = {
-            "author": [
-                r'author["\']?\s*[:=]\s*["\']([^"\']+)["\']',
-                r'author["\']?\s*[:=]\s*([^,}\n]+)',
-            ],
-            "year": [r'year["\']?\s*[:=]\s*(\d{4})'],
-            "journal": [
-                r'journal["\']?\s*[:=]\s*["\']([^"\']+)["\']',
-                r'journal["\']?\s*[:=]\s*([^,}\n]+)',
-            ],
-            "title": [
-                r'title["\']?\s*[:=]\s*["\']([^"\']+)["\']',
-                r'title["\']?\s*[:=]\s*([^,}\n]+)',
-            ],
-            "keywords": [
-                r'keywords["\']?\s*[:=]\s*["\']([^"\']+)["\']',
-                r'keywords["\']?\s*[:=]\s*([^,}\n]+)',
-            ],
-            "suggested_filename": [
-                r'suggested_filename["\']?\s*[:=]\s*["\']([^"\']+)["\']',
-                r'suggested_filename["\']?\s*[:=]\s*([^,}\n]+)',
-            ],
-        }
-
-        for key, key_patterns in patterns.items():
-            for pattern in key_patterns:
-                match = re.search(pattern, content, re.IGNORECASE)
-                if match:
-                    result[key] = match.group(1).strip()
-                    break
-
-        # Only return result if we found at least some useful fields
-        if (
-            result.get("author")
-            or result.get("title")
-            or result.get("suggested_filename")
-        ):
-            logger.info(f"Manual parsing extracted: {list(result.keys())}")
-            return result
-
-        return None
-
     def validate_filename(self, filename: str) -> bool:
         """Validate that the suggested filename follows safe filename practices."""
         if not filename:

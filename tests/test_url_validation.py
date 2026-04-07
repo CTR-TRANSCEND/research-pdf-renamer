@@ -5,6 +5,7 @@ Tests the validate_llm_server_url function to prevent SSRF attacks.
 """
 
 import pytest
+from unittest.mock import patch
 from backend.utils.validators import validate_llm_server_url
 
 
@@ -23,6 +24,7 @@ class TestValidateLLMServerURL:
         assert is_valid is True
         assert error_msg == "Valid URL"
 
+    @patch("backend.utils.validators.ALLOW_PRIVATE_IPS", False)
     def test_private_ip_rejected_by_default(self):
         """Test that private IP addresses are rejected by default (SSRF protection)."""
         is_valid, error_msg = validate_llm_server_url("http://192.168.1.100:8080")

@@ -200,7 +200,7 @@ class TestRateLimiterConfiguration:
 
     def test_get_user_id_from_user_function_exists(self):
         """Test that get_user_id_from_user helper function exists."""
-        from backend.app import get_user_id_from_user
+        from backend.routes.auth import get_user_id_from_user
 
         # Function should exist and be callable
         assert callable(get_user_id_from_user)

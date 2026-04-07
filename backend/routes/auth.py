@@ -12,6 +12,9 @@ from backend.utils.auth import (
     clear_jwt_cookie,
 )
 from datetime import datetime, timezone
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def csrf_exempt():
@@ -20,11 +23,6 @@ def csrf_exempt():
         f.csrf_exempt = True
         return f
     return wrapper
-
-
-def is_csrf_exempt(view):
-    """Check if a view is exempt from CSRF protection."""
-    return getattr(view, 'csrf_exempt', False)
 
 
 def get_user_id_from_user():
@@ -421,5 +419,5 @@ def refresh_token():
             return "", 204
 
     except Exception as e:
-        print(f"Token refresh error: {e}")
+        logger.error(f"Token refresh error: {e}")
         return jsonify({"error": "Token refresh failed"}), 401

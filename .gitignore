@@ -205,15 +205,13 @@ dist-ssr/
 .netlify/
 .firebase/
 
-# Project management / AI tooling (local-only)
+# User Custom Patterns (preserved by moai update)
 CLAUDE.md
 .mcp.json
 PROJECT_HANDOFF.md
 PROJECT_LOG.md
 Research_PDF_File_Renamer.md
 README_DEVELOPMENT.md
-
-# User Custom Patterns (preserved by moai update)
 *.py[cod]
 *$py.class
 .Python

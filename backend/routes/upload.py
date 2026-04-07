@@ -315,10 +315,7 @@ def upload_files():
             )
 
     except Exception as e:
-        print(f"[ERROR] Upload processing failed: {type(e).__name__}: {str(e)}")
-        import traceback
-
-        print(f"[ERROR] Traceback: {traceback.format_exc()}")
+        logger.error(f"Upload processing failed: {type(e).__name__}: {str(e)}", exc_info=True)
         return jsonify(
             {"error": "Server error during file processing"}
         ), 500
@@ -378,7 +375,7 @@ def download_file(filepath):
                 prefix_end = display_filename.find("_", 8)  # Find second underscore
                 if prefix_end > 0:
                     display_filename = display_filename[prefix_end + 1 :]
-            except:
+            except (ValueError, IndexError):
                 pass  # Use original filename if parsing fails
 
         return send_file(

@@ -3,8 +3,10 @@ from backend.database import db
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.hazmat.primitives import hashes
-import os
+import logging
 import base64
+
+logger = logging.getLogger(__name__)
 
 class SystemSettings(db.Model):
     """Store system-wide settings including LLM configuration and API keys."""
@@ -99,7 +101,7 @@ class SystemSettings(db.Model):
             # Handle encrypted values with backward compatibility
             if not setting.value:
                 # Empty value - record exists but no data
-                print(f"Warning: Encrypted setting {key} has empty value")
+                logger.warning(f"Encrypted setting {key} has empty value")
                 return default
 
             # Try secure HKDF-derived cipher first
@@ -115,15 +117,15 @@ class SystemSettings(db.Model):
                     decrypted_value = decrypted.decode("utf-8")
 
                     # Auto-migrate: Re-encrypt with secure cipher on successful legacy decrypt
-                    print(f"Info: Migrating {key} from legacy to secure encryption")
+                    logger.info(f"Migrating {key} from legacy to secure encryption")
                     cls.set_setting(key, decrypted_value, encrypt=True, user_id=setting.updated_by)
 
                     return decrypted_value
                 except Exception as legacy_error:
-                    print(f"Error decrypting setting {key}:")
-                    print(f"  HKDF attempt: {type(e).__name__}: {e}")
-                    print(f"  Legacy attempt: {type(legacy_error).__name__}: {legacy_error}")
-                    print(
+                    logger.error(
+                        f"Error decrypting setting {key}: "
+                        f"HKDF attempt: {type(e).__name__}: {e}, "
+                        f"Legacy attempt: {type(legacy_error).__name__}: {legacy_error}. "
                         f"This may indicate a SECRET_KEY mismatch. The value was encrypted with a different key."
                     )
                     return default

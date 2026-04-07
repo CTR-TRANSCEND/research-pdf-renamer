@@ -11,12 +11,7 @@ import os
 import jwt
 from datetime import datetime, timedelta, timezone
 
-
-def get_user_id_from_user():
-    """Key function for user-based rate limiting."""
-    return (
-        str(current_user.id) if current_user.is_authenticated else get_remote_address()
-    )
+logger = logging.getLogger(__name__)
 
 
 class ApplicationRootMiddleware:
@@ -72,9 +67,9 @@ load_dotenv(env_path)
 # Debug: Verify API key is loaded (SEC-002: Do not log actual key characters)
 api_key = os.environ.get("OPENAI_COMPATIBLE_API_KEY")
 if api_key:
-    print("[Init] OPENAI_COMPATIBLE_API_KEY loaded successfully")
+    logger.info("OPENAI_COMPATIBLE_API_KEY loaded successfully")
 else:
-    print("[Init] WARNING: OPENAI_COMPATIBLE_API_KEY not found in environment")
+    logger.warning("OPENAI_COMPATIBLE_API_KEY not found in environment")
 
 
 def _load_llm_settings(app, db):
@@ -98,9 +93,9 @@ def _load_llm_settings(app, db):
         app.config["LLM_MODEL"] = model
         app.config["OLLAMA_URL"] = ollama_url
 
-        print(f"[Init] LLM settings loaded: provider={provider}, model={model}")
+        logger.info(f"LLM settings loaded: provider={provider}, model={model}")
     except Exception as e:
-        print(f"[Warning] Could not load LLM settings from database: {e}")
+        logger.warning(f"Could not load LLM settings from database: {e}")
         # Set defaults
         app.config["LLM_PROVIDER"] = os.environ.get("LLM_PROVIDER", "openai")
         app.config["LLM_MODEL"] = os.environ.get("LLM_MODEL", "gpt-4o-mini")
@@ -454,10 +449,10 @@ def create_app(config_name=None):
             admin.set_password(admin_password)
             db.session.add(admin)
             db.session.commit()
-            print(f"[Setup] Admin user created: {admin_email}")
+            logger.info(f"Admin user created: {admin_email}")
         elif create_admin and not admin_password:
-            print(
-                "[Warning] ADMIN_CREATE is set but ADMIN_PASSWORD is not provided. Skipping admin creation."
+            logger.warning(
+                "ADMIN_CREATE is set but ADMIN_PASSWORD is not provided. Skipping admin creation."
             )
 
     # Template context processor for version
@@ -488,10 +483,10 @@ def _run_migrations(db):
                     text("ALTER TABLE usage ADD COLUMN success BOOLEAN DEFAULT 1")
                 )
                 db.session.commit()
-                print("[Migration] Added 'success' column to usage table")
+                logger.info("Added 'success' column to usage table")
             except Exception as e:
-                print(
-                    f"[Migration] Note: Could not add success column (may already exist): {e}"
+                logger.debug(
+                    f"Could not add success column (may already exist): {e}"
                 )
                 db.session.rollback()
 
