@@ -306,6 +306,42 @@ research-pdf-renamer/
 └── requirements.txt            # Python dependencies
 ```
 
+## Publishing Docker Images (Maintainers)
+
+The pre-built Docker image is hosted on GitHub Container Registry (GHCR). To publish a new version:
+
+**One-time setup:**
+
+1. Create a GitHub Personal Access Token at https://github.com/settings/tokens
+   - Select scope: `write:packages`
+2. Log in to GHCR:
+   ```bash
+   echo "YOUR_PAT" | docker login ghcr.io -u YOUR_GITHUB_USERNAME --password-stdin
+   ```
+
+**Publishing a new version:**
+
+```bash
+# Build with the latest code
+docker build -t ghcr.io/ctr-transcend/research-pdf-renamer:latest \
+             -t ghcr.io/ctr-transcend/research-pdf-renamer:0.3.0 .
+
+# Push both tags
+docker push ghcr.io/ctr-transcend/research-pdf-renamer:latest
+docker push ghcr.io/ctr-transcend/research-pdf-renamer:0.3.0
+```
+
+A GitHub Actions workflow (`.github/workflows/docker-publish.yml`) can also auto-publish when you push a version tag:
+
+```bash
+git tag v0.3.0
+git push origin v0.3.0
+```
+
+> **Note:** `docker login` credentials are stored in `~/.docker/config.json`. If the file doesn't show `ghcr.io`, you need to re-login before pushing.
+
+---
+
 ## API Reference
 
 | Method | Endpoint | Description |
