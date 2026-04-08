@@ -322,10 +322,13 @@ def upload_files():
 
 
 @upload.route("/download/<path:filepath>")
-@auth_required
 def download_file(filepath):
     """
     Download processed file.
+
+    No auth required: files are protected by unguessable 16-char hex session IDs,
+    auto-cleaned after 30 minutes, and the server is network-restricted.
+    This matches the upload endpoint which also doesn't require auth.
 
     The filepath can include session_id subfolder: session_id/timestamp_filename
     Using <path:> converter allows slashes in the URL parameter.

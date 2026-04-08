@@ -2,6 +2,15 @@
 
 All notable changes to Research PDF File Renamer are documented here.
 
+## [0.3.2] - 2026-04-08
+
+### Fixed
+- **Download failing with 401 Unauthorized** -- The download endpoint required authentication but the upload endpoint did not, causing automatic downloads to fail for users who hadn't logged in. Removed auth requirement from downloads; files are protected by unguessable session IDs, auto-cleanup, and network restrictions.
+- **Admin "System Status: Error. API key not configured"** -- The system status check incorrectly required an API key for all LLM providers, including Ollama and other local providers that don't need one. Local providers (Ollama, OpenAI-compatible, LM Studio) now show "Healthy" without an API key.
+- **Download stripping author name from filename** -- Legacy timestamp-strip code was removing author names that happened to match the timestamp pattern.
+- **LLM prompt with hardcoded example** -- The extraction prompt contained a specific paper example (Navaeiseddighi/bioRxiv) that caused the model to copy the example instead of extracting actual metadata. Replaced with generic placeholders.
+- **Timestamp prefix on downloaded filenames** -- Removed YYYYMMDD_HHMMSS_ prefix from download filenames; session folders already provide collision isolation.
+
 ## [0.3.0] - 2026-04-08
 
 ### Added

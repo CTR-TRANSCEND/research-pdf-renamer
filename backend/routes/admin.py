@@ -1518,46 +1518,51 @@ def system_status():
         # Check if API key is available (priority: environment variable > database)
         provider = config.get("LLM_PROVIDER", "openai")
         model = config.get("LLM_MODEL", "Not configured")
-        env_var_map = {
-            "openai": "OPENAI_API_KEY",
-            "anthropic": "ANTHROPIC_API_KEY",
-            "cohere": "COHERE_API_KEY",
-            "google": "GOOGLE_API_KEY",
-            "ollama": "OLLAMA_API_KEY",
-            "openai-compatible": "OPENAI_COMPATIBLE_API_KEY",
-            "lm-studio": "OPENAI_COMPATIBLE_API_KEY",
-        }
 
-        env_var = env_var_map.get(provider)
-        has_env_key = env_var and os.environ.get(env_var)
+        # Providers that don't require an API key (local/self-hosted)
+        optional_key_providers = ["ollama", "openai-compatible", "lm-studio"]
 
-        if has_env_key:
-            # API key loaded from environment (preferred method)
-            llm_service = LLMService(config)
-            # Test connection (for OpenAI)
-            if llm_service.provider == "openai":
-                llm_service.client.models.list()
+        if provider in optional_key_providers:
+            # These providers don't require an API key — mark healthy
             llm_status = "healthy"
-        elif SystemSettings.has_api_key(provider):
-            # Check database for legacy API key
-            try:
-                api_key = SystemSettings.get_api_key(provider)
-                if api_key:
-                    llm_service = LLMService(config)
-                    # Test connection (for OpenAI)
-                    if llm_service.provider == "openai":
-                        llm_service.client.models.list()
-                    llm_status = "healthy"
-                else:
-                    llm_status = "error"
-                    llm_error = f"API key exists in database but cannot be decrypted. Please set the {provider.upper()} API key via LLM Settings to use environment variables (recommended)."
-            except Exception as key_error:
-                llm_status = "error"
-                llm_error = f"API key decryption failed: {str(key_error)}. Please set the {provider.upper()} API key via LLM Settings to use environment variables (recommended)."
         else:
-            llm_status = "error"
-            env_label = env_var or f"{provider.upper()}_API_KEY"
-            llm_error = f"API key not configured. Please set {env_label} environment variable or use LLM Settings."
+            env_var_map = {
+                "openai": "OPENAI_API_KEY",
+                "anthropic": "ANTHROPIC_API_KEY",
+                "cohere": "COHERE_API_KEY",
+                "google": "GOOGLE_API_KEY",
+            }
+
+            env_var = env_var_map.get(provider)
+            has_env_key = env_var and os.environ.get(env_var)
+
+            if has_env_key:
+                # API key loaded from environment (preferred method)
+                llm_service = LLMService(config)
+                # Test connection (for OpenAI)
+                if llm_service.provider == "openai":
+                    llm_service.client.models.list()
+                llm_status = "healthy"
+            elif SystemSettings.has_api_key(provider):
+                # Check database for legacy API key
+                try:
+                    api_key = SystemSettings.get_api_key(provider)
+                    if api_key:
+                        llm_service = LLMService(config)
+                        # Test connection (for OpenAI)
+                        if llm_service.provider == "openai":
+                            llm_service.client.models.list()
+                        llm_status = "healthy"
+                    else:
+                        llm_status = "error"
+                        llm_error = f"API key exists in database but cannot be decrypted. Please set the {provider.upper()} API key via LLM Settings to use environment variables (recommended)."
+                except Exception as key_error:
+                    llm_status = "error"
+                    llm_error = f"API key decryption failed: {str(key_error)}. Please set the {provider.upper()} API key via LLM Settings to use environment variables (recommended)."
+            else:
+                llm_status = "error"
+                env_label = env_var or f"{provider.upper()}_API_KEY"
+                llm_error = f"API key not configured. Please set {env_label} environment variable or use LLM Settings."
     except Exception as e:
         llm_status = "error"
         llm_error = str(e)
