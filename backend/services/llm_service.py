@@ -705,14 +705,14 @@ Extract the following metadata from this research paper text and respond with ON
 Paper text:
 {text}
 
-Respond with JSON like:
+Respond with JSON only (no other text). Example format:
 {{
-    "author": "Navaeiseddighi",
-    "year": "2025",
-    "journal": "bioRxiv",
-    "title": "NF-κB-mediated epithelial tolerance enhances susceptibility to Streptococcus pneumoniae infection after influenza virus infection",
-    "keywords": "NF-κB, epithelial tolerance, Streptococcus pneumoniae, influenza, infection",
-    "suggested_filename": "Navaeiseddighi_2025_bioRxiv_NF-kB-epithelial-tolerance-Spn-IAV.pdf"
+    "author": "<first author last name>",
+    "year": "<4-digit publication year>",
+    "journal": "<journal or preprint server name>",
+    "title": "<full paper title>",
+    "keywords": "<3-5 comma-separated key terms>",
+    "suggested_filename": "<Author_Year_Journal_keywords.pdf>"
 }}
 """
 
