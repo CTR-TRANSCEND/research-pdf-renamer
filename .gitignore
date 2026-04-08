@@ -295,3 +295,4 @@ temp/
 archive/
 .moai/
 .claude/
+docker-compose.override.yml
