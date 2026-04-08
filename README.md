@@ -20,9 +20,48 @@ The application supports multiple LLM providers including OpenAI, LM Studio, Oll
 
 ## Quick Start
 
-### Option 1: Docker -- Zero Config (Recommended)
+### Option 1: Pre-built Docker Image (Fastest)
 
-No `.env` file needed. Includes a built-in Ollama LLM server that auto-downloads a model on first start.
+Pull the pre-built image from GitHub Container Registry. No cloning, no building required.
+
+```bash
+docker pull ghcr.io/ctr-transcend/research-pdf-renamer
+```
+
+**With OpenAI:**
+
+```bash
+docker run -d -p 5000:5000 \
+  -e LLM_PROVIDER=openai \
+  -e OPENAI_API_KEY=sk-your-key-here \
+  -e ADMIN_CREATE=true \
+  -e ADMIN_EMAIL=admin@local \
+  -e ADMIN_PASSWORD=changeme123 \
+  -v pdf-data:/app/instance \
+  -v pdf-uploads:/app/uploads \
+  ghcr.io/ctr-transcend/research-pdf-renamer
+```
+
+**With local Ollama (already running on your machine):**
+
+```bash
+docker run -d -p 5000:5000 \
+  -e LLM_PROVIDER=ollama \
+  -e OLLAMA_URL=http://host.docker.internal:11434 \
+  -e ALLOW_PRIVATE_IPS=true \
+  -e ADMIN_CREATE=true \
+  -e ADMIN_EMAIL=admin@local \
+  -e ADMIN_PASSWORD=changeme123 \
+  -v pdf-data:/app/instance \
+  -v pdf-uploads:/app/uploads \
+  ghcr.io/ctr-transcend/research-pdf-renamer
+```
+
+Open http://localhost:5000 and log in with the admin credentials above.
+
+### Option 2: Docker Compose -- Zero Config with Built-in LLM
+
+Includes a built-in Ollama LLM server that auto-downloads a model (~2 GB) on first start. No API key or external LLM needed.
 
 ```bash
 git clone https://github.com/CTR-TRANSCEND/research-pdf-renamer.git
@@ -30,19 +69,13 @@ cd research-pdf-renamer
 docker compose up -d
 ```
 
-Open http://localhost:5000 and log in with the default admin credentials below. The first startup takes a few minutes while the AI model downloads (~2 GB).
-
-### Option 2: Pre-built Docker Image
-
-No need to clone the repository. Requires your own LLM provider (OpenAI API key or local Ollama).
+The first startup takes a few minutes while the AI model downloads. All settings can be customized via a `.env` file without editing `docker-compose.yml`:
 
 ```bash
-# With OpenAI
-docker run -p 5000:5000 -e OPENAI_API_KEY=sk-... ghcr.io/ctr-transcend/research-pdf-renamer
-
-# With local Ollama (already running on host)
-docker run -p 5000:5000 -e LLM_PROVIDER=ollama -e OLLAMA_URL=http://host.docker.internal:11434 \
-  ghcr.io/ctr-transcend/research-pdf-renamer
+# .env (optional -- all values have defaults)
+LLM_MODEL=llama3.2:1b          # Use smaller model for low-resource machines
+ADMIN_PASSWORD=mysecurepass     # Override default password
+OLLAMA_URL=http://ollama:11434  # Default, points to bundled Ollama
 ```
 
 ### Option 3: Local Installation
@@ -60,7 +93,7 @@ On first startup with no existing users, the app auto-creates an admin account a
 
 Access the application at http://localhost:5000
 
-### Default Admin Account (Docker)
+### Default Admin Account
 
 | | |
 |---|---|
@@ -199,6 +232,17 @@ cp .env.example .env
 docker compose up -d
 ```
 
+### Pre-built Image
+
+```bash
+docker pull ghcr.io/ctr-transcend/research-pdf-renamer:latest
+docker run -d -p 5000:5000 \
+  -e LLM_PROVIDER=openai -e OPENAI_API_KEY=sk-... \
+  -e ADMIN_CREATE=true -e ADMIN_EMAIL=admin@local -e ADMIN_PASSWORD=changeme123 \
+  -v pdf-data:/app/instance -v pdf-uploads:/app/uploads \
+  ghcr.io/ctr-transcend/research-pdf-renamer
+```
+
 ### Systemd + Apache
 
 ```bash
@@ -226,13 +270,14 @@ This creates a systemd service with Gunicorn (3 workers) and configures log rota
 ### Running Tests
 
 ```bash
-source venv/bin/activate
-
 # Unit and integration tests (256 tests)
 pytest tests/ -v -m "not e2e"
 
-# E2E workflow tests (14 tests)
+# E2E workflow tests (15 tests)
 pytest tests/e2e/ -v
+
+# All tests (271 total)
+pytest tests/ -v
 
 # With coverage
 pytest --cov=backend tests/
@@ -251,7 +296,7 @@ research-pdf-renamer/
 ├── frontend/
 │   ├── static/js/main.js       # Frontend logic
 │   └── templates/              # Jinja2 templates (index, admin, profile)
-├── tests/                      # 270 tests (unit, integration, E2E)
+├── tests/                      # 271 tests (unit, integration, E2E)
 ├── docs/                       # Deployment guide, screenshots
 ├── systemd/                    # Systemd service and install script
 ├── Dockerfile                  # Docker container definition
