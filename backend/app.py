@@ -81,13 +81,25 @@ def _load_llm_settings(app, db):
         model = SystemSettings.get_setting("llm_model")
         ollama_url = SystemSettings.get_setting("ollama_url")
 
-        # Set defaults if not in database
+        # Seed database from env vars if not already set
         if not provider:
             provider = os.environ.get("LLM_PROVIDER", "openai")
+            try:
+                SystemSettings.set_setting("llm_provider", provider)
+            except Exception:
+                db.session.rollback()
         if not model:
             model = os.environ.get("LLM_MODEL", "gpt-4o-mini")
+            try:
+                SystemSettings.set_setting("llm_model", model)
+            except Exception:
+                db.session.rollback()
         if not ollama_url:
             ollama_url = os.environ.get("OLLAMA_URL", "http://localhost:11434")
+            try:
+                SystemSettings.set_setting("ollama_url", ollama_url)
+            except Exception:
+                db.session.rollback()
 
         # Update app config
         app.config["LLM_PROVIDER"] = provider
@@ -156,6 +168,7 @@ def create_app(config_name=None):
                 '/api/auth/register',
                 '/api/auth/logout',
                 '/api/auth/refresh-token',
+                '/api/auth/change-password',  # JWT-authenticated JSON API
                 '/api/auth/me',  # GET - read-only
                 '/api/auth/settings',  # GET - read-only
             )

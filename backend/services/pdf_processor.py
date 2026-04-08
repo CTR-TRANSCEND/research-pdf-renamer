@@ -7,6 +7,12 @@ from typing import List, Tuple, Optional, Dict, Any
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import logging
 
+try:
+    import pymupdf
+    HAS_PYMUPDF = True
+except ImportError:
+    HAS_PYMUPDF = False
+
 # Configure logging
 logger = logging.getLogger(__name__)
 
@@ -67,8 +73,13 @@ class PDFProcessor:
 
         except Exception as e:
             logger.error(f"Error processing PDF {os.path.basename(pdf_path)}: {e}")
-            # Fallback to pypdf if pdfplumber fails
-            return self._fallback_extraction(pdf_path)
+            # Fallback to pypdf, then pymupdf
+            text, pages = self._fallback_extraction(pdf_path)
+            if not text or len(text.strip()) < 100:
+                mupdf_text, mupdf_pages = self._pymupdf_extraction(pdf_path)
+                if mupdf_text and len(mupdf_text.strip()) > len((text or "").strip()):
+                    text, pages = mupdf_text, mupdf_pages
+            return text, pages
 
     def _contains_abstract(self, text: str) -> bool:
         """Check if the page contains an abstract section."""
@@ -180,6 +191,47 @@ class PDFProcessor:
 
         return text, pages_processed
 
+    def _pymupdf_extraction(self, pdf_path: str) -> Tuple[str, int]:
+        """Fallback method using pymupdf (fitz) for complex PDFs."""
+        if not HAS_PYMUPDF:
+            logger.warning("pymupdf not installed, skipping pymupdf fallback")
+            return "", 0
+
+        text = ""
+        pages_processed = 0
+
+        try:
+            doc = pymupdf.open(pdf_path)
+            max_pages = min(3, len(doc))
+
+            for i in range(max_pages):
+                try:
+                    page = doc[i]
+                    page_text = page.get_text()
+
+                    if page_text and page_text.strip():
+                        page_text = page_text.replace('\x00', '')
+                        text += f"\n--- Page {i+1} ---\n{page_text}\n"
+                        pages_processed += 1
+
+                        if self._contains_abstract(page_text) or len(page_text) > 500:
+                            break
+
+                except Exception as page_error:
+                    logger.warning(f"pymupdf failed to extract page {i+1}: {page_error}")
+                    continue
+
+            doc.close()
+
+        except Exception as e:
+            logger.error(f"pymupdf fallback extraction failed: {e}")
+            return "", 0
+
+        if text:
+            text = self._clean_text(text)
+
+        return text, pages_processed
+
     def _get_file_hash(self, pdf_path: str) -> str:
         """Calculate SHA256 hash of PDF file for caching."""
         try:
@@ -268,6 +320,18 @@ class PDFProcessor:
             else:
                 logger.warning("pypdf fallback also failed or produced less text")
 
+        # If both pdfplumber and pypdf failed, try pymupdf
+        if pages_processed == 0 or len(text_content.strip()) < 100:
+            logger.warning("pdfplumber and pypdf insufficient, trying pymupdf fallback")
+            mupdf_text, mupdf_pages = self._pymupdf_extraction(pdf_path)
+
+            if mupdf_text and len(mupdf_text.strip()) > len(text_content.strip()):
+                text_content = mupdf_text
+                pages_processed = mupdf_pages
+                logger.info(f"pymupdf fallback extracted {len(mupdf_text)} characters from {mupdf_pages} pages")
+            else:
+                logger.warning("pymupdf fallback also failed or produced less text")
+
         return text_content, pages_processed, found_abstract, found_required_info
 
     def _extract_parallel(self, pdf_path: str) -> Tuple[str, int, bool, bool]:
@@ -320,6 +384,25 @@ class PDFProcessor:
                         continue
                     elif page_idx >= 1:
                         break
+
+        # If pdfplumber parallel extraction failed, try pypdf then pymupdf
+        if pages_processed == 0 or len(text_content.strip()) < 100:
+            logger.warning("Parallel pdfplumber extraction insufficient, trying pypdf fallback")
+            fallback_text, fallback_pages = self._fallback_extraction(pdf_path)
+
+            if fallback_text and len(fallback_text.strip()) > len(text_content.strip()):
+                text_content = fallback_text
+                pages_processed = fallback_pages
+                logger.info(f"pypdf fallback extracted {len(fallback_text)} characters from {fallback_pages} pages")
+
+        if pages_processed == 0 or len(text_content.strip()) < 100:
+            logger.warning("pypdf also insufficient, trying pymupdf fallback")
+            mupdf_text, mupdf_pages = self._pymupdf_extraction(pdf_path)
+
+            if mupdf_text and len(mupdf_text.strip()) > len(text_content.strip()):
+                text_content = mupdf_text
+                pages_processed = mupdf_pages
+                logger.info(f"pymupdf fallback extracted {len(mupdf_text)} characters from {mupdf_pages} pages")
 
         return text_content, pages_processed, found_abstract, found_required_info
 

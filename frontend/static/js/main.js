@@ -38,7 +38,7 @@ function initializeApp() {
     // Get CSRF token if available
     const token = document.querySelector('meta[name="csrf-token"]');
     if (token) {
-        axios.defaults.headers.common['X-CSRF-TOKEN'] = token.getAttribute('content');
+        axios.defaults.headers.common['X-CSRFToken'] = token.getAttribute('content');
     }
 }
 
@@ -347,7 +347,7 @@ async function processFiles() {
 
                 // Start download
                 setTimeout(() => {
-                    window.location.href = (window.APP_BASE_URL || '') + response.data.download_url;
+                    window.location.href = response.data.download_url;
                 }, 500);
             }, 800);
         }
@@ -493,7 +493,7 @@ function showResultsInModal(data, totalSubmitted = 1) {
             <p class="text-sm text-blue-800">
                 <i class="fas fa-download mr-1"></i>
                 Your download should start automatically. If not,
-                <a href="${(window.APP_BASE_URL || '') + data.download_url}" class="underline font-semibold">click here</a>.
+                <a href="${data.download_url}" class="underline font-semibold">click here</a>.
             </p>
         </div>
     </div>`;
@@ -890,6 +890,19 @@ async function logout() {
         showToast('Logged out successfully', 'success');
         // Now load the anonymous user limits
         loadUserLimits();
+    }
+}
+
+// Toggle password field visibility
+function togglePasswordVisibility(inputId, btn) {
+    const input = document.getElementById(inputId);
+    const icon = btn.querySelector('i');
+    if (input.type === 'password') {
+        input.type = 'text';
+        icon.classList.replace('fa-eye', 'fa-eye-slash');
+    } else {
+        input.type = 'password';
+        icon.classList.replace('fa-eye-slash', 'fa-eye');
     }
 }
 

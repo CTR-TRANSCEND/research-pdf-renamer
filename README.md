@@ -180,6 +180,7 @@ Copy `.env.example` to `.env` and configure:
 | `RATE_LIMIT_STORAGE_URL` | Redis URL for persistent rate limiting | `memory://` |
 | `INACTIVITY_TIMEOUT_MINUTES` | Session inactivity timeout | `30` |
 | `TALISMAN_FORCE_HTTPS` | Force HTTPS redirects | `true` (set `false` for Docker) |
+| `APPLICATION_ROOT` | Sub-path for reverse proxy (e.g., `/pdf-renamer`) | (none) |
 
 ### LLM Provider Setup
 
@@ -256,7 +257,7 @@ This creates a systemd service with Gunicorn (3 workers) and configures log rota
 - [x] XSS protection (Jinja2 auto-escaping + `escapeHtml()`)
 - [x] CSRF protection for state-changing endpoints
 - [x] SQL injection prevention (SQLAlchemy ORM)
-- [x] Password hashing (werkzeug)
+- [x] Password hashing (bcrypt)
 - [x] Rate limiting (Flask-Limiter, optional Redis backend)
 - [x] SSRF protection for LLM server URLs
 - [x] File type validation (magic bytes)
@@ -367,4 +368,4 @@ MIT License. See [LICENSE](LICENSE) for details.
 
 Developed by [Dr. Junguk Hur](https://med.und.edu/research/labs/hur/index.html), Associate Professor, University of North Dakota School of Medicine and Health Sciences
 
-*Last updated: March 22, 2026*
+*Last updated: April 8, 2026*

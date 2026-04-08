@@ -409,25 +409,43 @@
                     <label class="block text-gray-700 text-sm font-bold mb-2" for="current-password">
                         Current Password
                     </label>
-                    <input type="password" id="current-password" required
-                           class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-indigo-500"
-                           placeholder="••••••••••">
+                    <div class="relative">
+                        <input type="password" id="current-password" required
+                               class="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:border-indigo-500"
+                               placeholder="••••••••••">
+                        <button type="button" onclick="togglePasswordVisibility('current-password', this)"
+                                class="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-500 hover:text-gray-700">
+                            <i class="fas fa-eye"></i>
+                        </button>
+                    </div>
                 </div>
                 <div class="mb-4">
                     <label class="block text-gray-700 text-sm font-bold mb-2" for="new-password">
                         New Password
                     </label>
-                    <input type="password" id="new-password" required
-                           class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-indigo-500"
-                           placeholder="••••••••••">
+                    <div class="relative">
+                        <input type="password" id="new-password" required
+                               class="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:border-indigo-500"
+                               placeholder="••••••••••">
+                        <button type="button" onclick="togglePasswordVisibility('new-password', this)"
+                                class="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-500 hover:text-gray-700">
+                            <i class="fas fa-eye"></i>
+                        </button>
+                    </div>
                 </div>
                 <div class="mb-6">
                     <label class="block text-gray-700 text-sm font-bold mb-2" for="confirm-new-password">
                         Confirm New Password
                     </label>
-                    <input type="password" id="confirm-new-password" required
-                           class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-indigo-500"
-                           placeholder="••••••••••">
+                    <div class="relative">
+                        <input type="password" id="confirm-new-password" required
+                               class="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:border-indigo-500"
+                               placeholder="••••••••••">
+                        <button type="button" onclick="togglePasswordVisibility('confirm-new-password', this)"
+                                class="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-500 hover:text-gray-700">
+                            <i class="fas fa-eye"></i>
+                        </button>
+                    </div>
                 </div>
                 <button type="submit" id="change-password-btn"
                         class="w-full bg-indigo-600 text-white py-2 px-4 rounded-lg hover:bg-indigo-700 transition font-semibold">
@@ -541,6 +559,12 @@
         // Use the global API_BASE_URL set by the server (includes APPLICATION_ROOT)
         if (window.API_BASE_URL) {
             axios.defaults.baseURL = window.API_BASE_URL;
+        }
+
+        // Set CSRF token header for state-changing requests
+        const csrfToken = document.querySelector('meta[name="csrf-token"]');
+        if (csrfToken) {
+            axios.defaults.headers.common['X-CSRFToken'] = csrfToken.getAttribute('content');
         }
 
         // Get current user info and update navigation
@@ -1801,6 +1825,18 @@
             console.error('Error loading usage stats:', error);
             const statsContent = document.getElementById('usage-stats-content');
             statsContent.innerHTML = '<p class="text-center text-gray-500">Error loading statistics</p>';
+        }
+    }
+
+    function togglePasswordVisibility(inputId, btn) {
+        const input = document.getElementById(inputId);
+        const icon = btn.querySelector('i');
+        if (input.type === 'password') {
+            input.type = 'text';
+            icon.classList.replace('fa-eye', 'fa-eye-slash');
+        } else {
+            input.type = 'password';
+            icon.classList.replace('fa-eye-slash', 'fa-eye');
         }
     }
 
