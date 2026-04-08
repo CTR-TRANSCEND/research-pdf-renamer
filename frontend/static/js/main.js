@@ -852,7 +852,8 @@ async function handleRegister(event) {
         const response = await axios.post('auth/register', {
             name: name,
             email: email,
-            password: password
+            password: password,
+            password_confirm: confirmPassword
         });
 
         // JWT token is now stored in HttpOnly cookie (not localStorage) for XSS protection
