@@ -365,18 +365,8 @@ def download_file(filepath):
         else:
             mimetype = "application/pdf"
 
-        # Get the display filename (last part of path, without timestamp prefix)
+        # Get the display filename (last part of path)
         display_filename = os.path.basename(safe_filepath)
-        # Remove timestamp prefix if present (format: YYYYMMDD_HHMMSS_)
-        if "_" in display_filename and display_filename[8] == "_":
-            # Try to parse as timestamp format
-            try:
-                # Check if first part looks like timestamp (digits and underscores)
-                prefix_end = display_filename.find("_", 8)  # Find second underscore
-                if prefix_end > 0:
-                    display_filename = display_filename[prefix_end + 1 :]
-            except (ValueError, IndexError):
-                pass  # Use original filename if parsing fails
 
         return send_file(
             file_path,
