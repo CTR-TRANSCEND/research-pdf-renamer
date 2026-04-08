@@ -555,6 +555,26 @@ HSTS cache, then disable the SSL VirtualHost.
 
 ---
 
+## Nginx Reverse Proxy (Alternative to Apache)
+
+If you use Nginx instead of Apache, add a location block to proxy to the Flask backend:
+
+```nginx
+location /pdf-renamer/ {
+    proxy_pass http://127.0.0.1:5000/pdf-renamer/;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 300;
+    client_max_body_size 50M;
+}
+```
+
+Set `APPLICATION_ROOT=/pdf-renamer` in your `.env` file so the app generates correct URLs under the sub-path. If serving at the root (`/`), no `APPLICATION_ROOT` is needed.
+
+---
+
 ## Systemd Service
 
 ### Service File Location
@@ -615,7 +635,6 @@ sudo systemctl restart pdf-renamer
 State-changing endpoints require CSRF tokens:
 
 **Protected endpoints:**
-- POST /api/auth/change-password
 - POST /api/auth/update-profile
 - POST /api/admin/* (all admin actions)
 - DELETE /api/admin/*
@@ -624,6 +643,7 @@ State-changing endpoints require CSRF tokens:
 - /api/auth/login (JWT + session protection)
 - /api/auth/register
 - /api/auth/logout
+- /api/auth/change-password (JWT-authenticated JSON API)
 - /api/upload/* (multipart/form-data)
 
 ### Session Security
