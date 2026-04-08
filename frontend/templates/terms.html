@@ -1,190 +1,145 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Terms and Conditions - Research PDF File Renamer</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-</head>
-<body class="bg-gray-50">
-    <!-- Header -->
-    <nav class="bg-white shadow-sm border-b">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div class="flex justify-between h-16">
-                <div class="flex items-center">
-                    <a href="{{ url_for('main.index') }}" class="text-xl font-bold text-indigo-600">
-                        <i class="fas fa-file-pdf mr-2"></i>Research PDF File Renamer
-                    </a>
-                </div>
-                <div class="flex items-center space-x-4">
-                    <a href="{{ url_for('main.index') }}" class="text-gray-600 hover:text-gray-900">
-                        <i class="fas fa-home mr-1"></i>Home
-                    </a>
-                    <a href="{{ url_for('main.admin_panel') }}" class="text-gray-600 hover:text-gray-900">
-                        <i class="fas fa-cog mr-1"></i>Admin
-                    </a>
-                    <a href="{{ url_for('auth.logout') }}" class="text-gray-600 hover:text-gray-900">
-                        <i class="fas fa-sign-out-alt mr-1"></i>Logout
-                    </a>
-                </div>
-            </div>
+{% extends "base.html" %}
+
+{% block title %}Terms and Conditions - Research PDF File Renamer{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto">
+    <div class="bg-white shadow-lg rounded-lg">
+        <!-- Header -->
+        <div class="px-6 py-8 border-b border-gray-200">
+            <h1 class="text-3xl font-bold text-gray-900">Terms and Conditions</h1>
+            <p class="mt-2 text-gray-600">Last updated: December 7, 2025</p>
         </div>
-    </nav>
 
-    <!-- Main Content -->
-    <main class="max-w-4xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
-        <div class="bg-white shadow-lg rounded-lg">
-            <!-- Header -->
-            <div class="px-6 py-8 border-b border-gray-200">
-                <h1 class="text-3xl font-bold text-gray-900">Terms and Conditions</h1>
-                <p class="mt-2 text-gray-600">Last updated: December 7, 2025</p>
-            </div>
+        <!-- Content -->
+        <div class="px-6 py-8">
+            <div class="prose max-w-none">
+                <h2 class="text-2xl font-semibold text-gray-900 mb-4">1. Introduction</h2>
+                <p class="mb-6 text-gray-700">
+                    Welcome to Research PDF File Renamer ("the Service"). By accessing or using our Service, you agree to be bound by these Terms and Conditions ("Terms").
+                    If you disagree with any part of these terms, then you may not access the Service.
+                </p>
 
-            <!-- Content -->
-            <div class="px-6 py-8">
-                <div class="prose max-w-none">
-                    <h2 class="text-2xl font-semibold text-gray-900 mb-4">1. Introduction</h2>
-                    <p class="mb-6 text-gray-700">
-                        Welcome to Research PDF File Renamer ("the Service"). By accessing or using our Service, you agree to be bound by these Terms and Conditions ("Terms").
-                        If you disagree with any part of these terms, then you may not access the Service.
+                <h2 class="text-2xl font-semibold text-gray-900 mb-4">2. Service Description</h2>
+                <p class="mb-6 text-gray-700">
+                    Research PDF File Renamer is a free, web-based tool designed to help researchers and students organize their PDF documents by automatically generating
+                    descriptive filenames based on the content of academic papers. The service uses artificial intelligence to extract metadata such as author names,
+                    publication year, journal titles, and keywords from PDF documents.
+                </p>
+
+                <h2 class="text-2xl font-semibold text-gray-900 mb-4">3. Acceptance of Terms</h2>
+                <p class="mb-6 text-gray-700">
+                    By creating an account or using our Service, you acknowledge that you have read, understood, and agree to be bound by these Terms and Conditions.
+                </p>
+
+                <h2 class="text-2xl font-semibold text-gray-900 mb-4">4. User Responsibilities</h2>
+                <ul class="list-disc pl-6 mb-6 text-gray-700">
+                    <li>You must be at least 13 years old to use this Service</li>
+                    <li>You are responsible for maintaining the confidentiality of your account credentials</li>
+                    <li>You agree to provide accurate, current, and complete information during registration</li>
+                    <li>You are responsible for all activities that occur under your account</li>
+                    <li>You must not use the Service for any illegal or unauthorized purpose</li>
+                </ul>
+
+                <h2 class="text-2xl font-semibold text-gray-900 mb-4">5. Important Disclaimer - Confidential Documents</h2>
+                <div class="bg-red-50 border-l-4 border-red-500 p-4 mb-6">
+                    <p class="text-red-800 font-semibold mb-2">
+                        <i class="fas fa-exclamation-triangle mr-2"></i>CRITICAL WARNING REGARDING CONFIDENTIAL DOCUMENTS
                     </p>
-
-                    <h2 class="text-2xl font-semibold text-gray-900 mb-4">2. Service Description</h2>
-                    <p class="mb-6 text-gray-700">
-                        Research PDF File Renamer is a free, web-based tool designed to help researchers and students organize their PDF documents by automatically generating
-                        descriptive filenames based on the content of academic papers. The service uses artificial intelligence to extract metadata such as author names,
-                        publication year, journal titles, and keywords from PDF documents.
+                    <p class="text-red-700 mb-2">
+                        <strong>DO NOT</strong> upload or process any documents containing:
                     </p>
-
-                    <h2 class="text-2xl font-semibold text-gray-900 mb-4">3. Acceptance of Terms</h2>
-                    <p class="mb-6 text-gray-700">
-                        By creating an account or using our Service, you acknowledge that you have read, understood, and agree to be bound by these Terms and Conditions.
-                    </p>
-
-                    <h2 class="text-2xl font-semibold text-gray-900 mb-4">4. User Responsibilities</h2>
-                    <ul class="list-disc pl-6 mb-6 text-gray-700">
-                        <li>You must be at least 13 years old to use this Service</li>
-                        <li>You are responsible for maintaining the confidentiality of your account credentials</li>
-                        <li>You agree to provide accurate, current, and complete information during registration</li>
-                        <li>You are responsible for all activities that occur under your account</li>
-                        <li>You must not use the Service for any illegal or unauthorized purpose</li>
+                    <ul class="list-disc pl-6 text-red-700">
+                        <li>Confidential research data or unpublished findings</li>
+                        <li>Personal health information (PHI) or medical records</li>
+                        <li>Financial documents or sensitive business information</li>
+                        <li>Classified government information</li>
+                        <li>Any documents subject to non-disclosure agreements</li>
+                        <li>Unpublished manuscripts or proprietary research</li>
+                        <li>Personal identifying information of others</li>
                     </ul>
-
-                    <h2 class="text-2xl font-semibold text-gray-900 mb-4">5. Important Disclaimer - Confidential Documents</h2>
-                    <div class="bg-red-50 border-l-4 border-red-500 p-4 mb-6">
-                        <p class="text-red-800 font-semibold mb-2">
-                            <i class="fas fa-exclamation-triangle mr-2"></i>CRITICAL WARNING REGARDING CONFIDENTIAL DOCUMENTS
-                        </p>
-                        <p class="text-red-700 mb-2">
-                            <strong>DO NOT</strong> upload or process any documents containing:
-                        </p>
-                        <ul class="list-disc pl-6 text-red-700">
-                            <li>Confidential research data or unpublished findings</li>
-                            <li>Personal health information (PHI) or medical records</li>
-                            <li>Financial documents or sensitive business information</li>
-                            <li>Classified government information</li>
-                            <li>Any documents subject to non-disclosure agreements</li>
-                            <li>Unpublished manuscripts or proprietary research</li>
-                            <li>Personal identifying information of others</li>
-                        </ul>
-                        <p class="text-red-700 mt-2">
-                            <strong>You are solely responsible for ensuring that uploaded documents do not contain confidential, proprietary, or sensitive information.</strong>
-                        </p>
-                    </div>
-
-                    <h2 class="text-2xl font-semibold text-gray-900 mb-4">6. Limitation of Liability and Indemnification</h2>
-                    <div class="bg-yellow-50 border-l-4 border-yellow-500 p-4 mb-6">
-                        <p class="text-gray-800 font-semibold mb-2">
-                            <i class="fas fa-shield-alt mr-2"></i>LIMITATION OF LIABILITY
-                        </p>
-                        <p class="text-gray-700 mb-2">
-                            To the maximum extent permitted by law, the Service Provider, developers, and affiliates shall <strong>NOT</strong> be liable for:
-                        </p>
-                        <ul class="list-disc pl-6 text-gray-700">
-                            <li>Any indirect, incidental, special, consequential, or punitive damages</li>
-                            <li>Loss of data, profits, business opportunities, or reputation</li>
-                            <li>Unauthorized access to or use of your uploaded documents</li>
-                            <li>Data breaches or security incidents affecting uploaded content</li>
-                            <li>Errors or inaccuracies in the AI-generated filenames or metadata</li>
-                            <li>Any damages arising from your use of confidential documents</li>
-                        </ul>
-                        <p class="text-gray-700 mt-2">
-                            <strong>YOU USE THIS SERVICE AT YOUR OWN RISK.</strong> The service is provided "as is" without warranties of any kind.
-                        </p>
-                    </div>
-
-                    <p class="mb-6 text-gray-700">
-                        <strong>INDEMNIFICATION:</strong> You agree to indemnify and hold harmless the Service Provider, developers, and affiliates from any claims, damages,
-                        or expenses arising from your use of the Service, including but not limited to your use of confidential documents.
+                    <p class="text-red-700 mt-2">
+                        <strong>You are solely responsible for ensuring that uploaded documents do not contain confidential, proprietary, or sensitive information.</strong>
                     </p>
+                </div>
 
-                    <h2 class="text-2xl font-semibold text-gray-900 mb-4">7. Intellectual Property</h2>
-                    <p class="mb-6 text-gray-700">
-                        The Service and its original content, features, and functionality are owned by the Service Provider and are protected by international
-                        copyright, trademark, patent, trade secret, and other intellectual property laws.
+                <h2 class="text-2xl font-semibold text-gray-900 mb-4">6. Limitation of Liability and Indemnification</h2>
+                <div class="bg-yellow-50 border-l-4 border-yellow-500 p-4 mb-6">
+                    <p class="text-gray-800 font-semibold mb-2">
+                        <i class="fas fa-shield-alt mr-2"></i>LIMITATION OF LIABILITY
                     </p>
-                    <p class="mb-6 text-gray-700">
-                        You retain ownership of your uploaded documents. However, by using the Service, you grant us a limited, non-exclusive license to process
-                        your documents solely for the purpose of providing the service functionality.
+                    <p class="text-gray-700 mb-2">
+                        To the maximum extent permitted by law, the Service Provider, developers, and affiliates shall <strong>NOT</strong> be liable for:
                     </p>
+                    <ul class="list-disc pl-6 text-gray-700">
+                        <li>Any indirect, incidental, special, consequential, or punitive damages</li>
+                        <li>Loss of data, profits, business opportunities, or reputation</li>
+                        <li>Unauthorized access to or use of your uploaded documents</li>
+                        <li>Data breaches or security incidents affecting uploaded content</li>
+                        <li>Errors or inaccuracies in the AI-generated filenames or metadata</li>
+                        <li>Any damages arising from your use of confidential documents</li>
+                    </ul>
+                    <p class="text-gray-700 mt-2">
+                        <strong>YOU USE THIS SERVICE AT YOUR OWN RISK.</strong> The service is provided "as is" without warranties of any kind.
+                    </p>
+                </div>
 
-                    <h2 class="text-2xl font-semibold text-gray-900 mb-4">8. Privacy and Data Processing</h2>
-                    <p class="mb-6 text-gray-700">
-                        We respect your privacy and are committed to protecting your personal information. Your uploaded PDFs are processed temporarily for filename generation
-                        and are automatically deleted within 24 hours. For detailed information about how we handle your data, please review our Privacy Policy.
-                    </p>
+                <p class="mb-6 text-gray-700">
+                    <strong>INDEMNIFICATION:</strong> You agree to indemnify and hold harmless the Service Provider, developers, and affiliates from any claims, damages,
+                    or expenses arising from your use of the Service, including but not limited to your use of confidential documents.
+                </p>
 
-                    <h2 class="text-2xl font-semibold text-gray-900 mb-4">9. Service Availability</h2>
-                    <p class="mb-6 text-gray-700">
-                        This is a free service provided "as is" and "as available." We do not guarantee uninterrupted or error-free operation. We reserve the right to modify,
-                        suspend, or discontinue the Service at any time without notice.
-                    </p>
+                <h2 class="text-2xl font-semibold text-gray-900 mb-4">7. Intellectual Property</h2>
+                <p class="mb-6 text-gray-700">
+                    The Service and its original content, features, and functionality are owned by the Service Provider and are protected by international
+                    copyright, trademark, patent, trade secret, and other intellectual property laws.
+                </p>
+                <p class="mb-6 text-gray-700">
+                    You retain ownership of your uploaded documents. However, by using the Service, you grant us a limited, non-exclusive license to process
+                    your documents solely for the purpose of providing the service functionality.
+                </p>
 
-                    <h2 class="text-2xl font-semibold text-gray-900 mb-4">10. Account Termination</h2>
-                    <p class="mb-6 text-gray-700">
-                        We reserve the right to suspend or terminate your account at any time for violations of these Terms or for any other reason, with or without notice.
-                    </p>
+                <h2 class="text-2xl font-semibold text-gray-900 mb-4">8. Privacy and Data Processing</h2>
+                <p class="mb-6 text-gray-700">
+                    We respect your privacy and are committed to protecting your personal information. Your uploaded PDFs are processed temporarily for filename generation
+                    and are automatically deleted within 24 hours. For detailed information about how we handle your data, please review our Privacy Policy.
+                </p>
 
-                    <h2 class="text-2xl font-semibold text-gray-900 mb-4">11. Changes to Terms</h2>
-                    <p class="mb-6 text-gray-700">
-                        We reserve the right to modify these Terms at any time. Changes will be effective immediately upon posting. Your continued use of the Service
-                        after such changes constitutes acceptance of the new Terms.
-                    </p>
+                <h2 class="text-2xl font-semibold text-gray-900 mb-4">9. Service Availability</h2>
+                <p class="mb-6 text-gray-700">
+                    This is a free service provided "as is" and "as available." We do not guarantee uninterrupted or error-free operation. We reserve the right to modify,
+                    suspend, or discontinue the Service at any time without notice.
+                </p>
 
-                    <h2 class="text-2xl font-semibold text-gray-900 mb-4">12. Contact Information</h2>
-                    <p class="mb-6 text-gray-700">
-                        If you have any questions about these Terms and Conditions, please contact us at:
-                    </p>
-                    <div class="bg-gray-50 p-4 rounded-lg">
-                        <p class="text-gray-700">
-                            <strong>Email:</strong> {% if contact_email %}<a href="mailto:{{ contact_email }}" class="text-indigo-600 hover:text-indigo-800">{{ contact_email }}</a>{% else %}<em class="text-gray-500">Not configured</em>{% endif %}<br>
-                            <strong>Service:</strong> Research PDF File Renamer
-                        </p>
-                    </div>
+                <h2 class="text-2xl font-semibold text-gray-900 mb-4">10. Account Termination</h2>
+                <p class="mb-6 text-gray-700">
+                    We reserve the right to suspend or terminate your account at any time for violations of these Terms or for any other reason, with or without notice.
+                </p>
 
-                    <div class="mt-8 pt-6 border-t border-gray-200">
-                        <p class="text-sm text-gray-500 text-center">
-                            By using this service, you acknowledge that you have read, understood, and agree to be bound by these Terms and Conditions.
-                        </p>
-                    </div>
+                <h2 class="text-2xl font-semibold text-gray-900 mb-4">11. Changes to Terms</h2>
+                <p class="mb-6 text-gray-700">
+                    We reserve the right to modify these Terms at any time. Changes will be effective immediately upon posting. Your continued use of the Service
+                    after such changes constitutes acceptance of the new Terms.
+                </p>
+
+                <h2 class="text-2xl font-semibold text-gray-900 mb-4">12. Contact Information</h2>
+                <p class="mb-6 text-gray-700">
+                    If you have any questions about these Terms and Conditions, please contact us at:
+                </p>
+                <div class="bg-gray-50 p-4 rounded-lg">
+                    <p class="text-gray-700">
+                        <strong>Email:</strong> {% if contact_email %}<a href="mailto:{{ contact_email }}" class="text-indigo-600 hover:text-indigo-800">{{ contact_email }}</a>{% else %}<em class="text-gray-500">Not configured</em>{% endif %}<br>
+                        <strong>Service:</strong> Research PDF File Renamer
+                    </p>
+                </div>
+
+                <div class="mt-8 pt-6 border-t border-gray-200">
+                    <p class="text-sm text-gray-500 text-center">
+                        By using this service, you acknowledge that you have read, understood, and agree to be bound by these Terms and Conditions.
+                    </p>
                 </div>
             </div>
         </div>
-    </main>
-
-    <!-- Footer -->
-    <footer class="bg-gray-800 text-white py-8 mt-12">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div class="text-center">
-                <p class="text-gray-400">© 2025 Research PDF File Renamer. All rights reserved.</p>
-                <div class="mt-4 space-x-4">
-                    <a href="{{ url_for('main.terms') }}" class="text-gray-400 hover:text-white">Terms & Conditions</a>
-                    <a href="#" class="text-gray-400 hover:text-white">Privacy Policy</a>
-                    <a href="#" class="text-gray-400 hover:text-white">Contact</a>
-                </div>
-            </div>
-        </div>
-    </footer>
-</body>
-</html>
+    </div>
+</div>
+{% endblock %}

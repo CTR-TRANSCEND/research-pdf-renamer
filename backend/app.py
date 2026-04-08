@@ -4,6 +4,7 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from backend.config import config
 from backend.database import db
+from sqlalchemy.exc import IntegrityError
 from backend.models import User, SystemSettings
 from werkzeug.middleware.proxy_fix import ProxyFix
 import logging
@@ -467,14 +468,21 @@ def create_app(config_name=None):
                 is_approved=True,
             )
             auto_admin.set_password(auto_password)
-            db.session.add(auto_admin)
-            db.session.commit()
-            logger.info("=" * 50)
-            logger.info("AUTO-CREATED ADMIN ACCOUNT")
-            logger.info(f"  Email:    admin@local")
-            logger.info(f"  Password: {auto_password}")
-            logger.info("  Change this password after first login!")
-            logger.info("=" * 50)
+            try:
+                db.session.add(auto_admin)
+                db.session.commit()
+                logger.info("=" * 50)
+                logger.info("AUTO-CREATED ADMIN ACCOUNT")
+                logger.info(f"  Email:    admin@local")
+                logger.info(f"  Password: {auto_password}")
+                logger.info("  Change this password after first login!")
+                logger.info("=" * 50)
+            except IntegrityError:
+                db.session.rollback()
+                logger.info("Admin account already created by another worker")
+            except Exception:
+                db.session.rollback()
+                logger.warning("Failed to auto-create admin account")
 
     # Template context processor for version
     @app.context_processor

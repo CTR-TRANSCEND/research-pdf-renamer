@@ -213,6 +213,12 @@ SESSION_COOKIE_SAMESITE=Lax
 EOF
         fi
 
+        # Generate secure random values and replace placeholder defaults
+        GENERATED_SECRET_KEY=$(python3 -c 'import secrets; print(secrets.token_hex(32))')
+        GENERATED_ADMIN_PASSWORD=$(python3 -c 'import secrets; print(secrets.token_urlsafe(12))')
+        sed -i "s|SECRET_KEY=.*|SECRET_KEY=$GENERATED_SECRET_KEY|" "$INSTALL_DIR/.env"
+        sed -i "s|ADMIN_PASSWORD=.*|ADMIN_PASSWORD=$GENERATED_ADMIN_PASSWORD|" "$INSTALL_DIR/.env"
+
         print_warn ".env file created. Please edit with your configuration:"
         echo "  sudo nano $INSTALL_DIR/.env"
     else
