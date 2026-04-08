@@ -6,12 +6,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends gcc libffi-dev && \
-    rm -rf /var/lib/apt/lists/*
-
-# Install Python dependencies
+# Install Python dependencies (all packages have pre-built wheels)
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
