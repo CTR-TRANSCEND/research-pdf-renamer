@@ -198,8 +198,8 @@ class FileService:
         Returns:
             New filepath (with session isolation and unique suffix)
 
-        Files are organized as: uploads/downloads/{session_id}/{timestamp}_{filename}
-        This prevents collisions when multiple users process files with same metadata.
+        Files are organized as: uploads/downloads/{session_id}/{filename}
+        Session folders provide user isolation; random suffix added only on collision.
         """
         download_folder = os.path.join(self.upload_folder, "downloads")
 
@@ -208,11 +208,14 @@ class FileService:
         session_download_folder = os.path.join(download_folder, session_folder)
         os.makedirs(session_download_folder, exist_ok=True)
 
-        # Add timestamp to filename to prevent collisions
-        # Format: YYYYMMDD_HHMMSS_{original_filename}
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        name, ext = os.path.splitext(new_filename)
-        unique_filename = f"{timestamp}_{name}{ext}"
+        # Use clean filename — session folder provides isolation
+        # Add short random suffix only if file already exists
+        unique_filename = new_filename
+        if os.path.exists(os.path.join(session_download_folder, unique_filename)):
+            import random
+            suffix = random.randint(1000, 9999)
+            name, ext = os.path.splitext(new_filename)
+            unique_filename = f"{name}_{suffix}{ext}"
 
         new_filepath = os.path.join(session_download_folder, unique_filename)
         shutil.move(filepath, new_filepath)
