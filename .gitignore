@@ -254,6 +254,7 @@ instance/
 .webassets-cache
 APISetting.txt
 config.py
+!backend/config.py
 *.key
 .secret_key
 uploads/
