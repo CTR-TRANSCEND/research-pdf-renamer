@@ -297,3 +297,4 @@ archive/
 .moai/
 .claude/
 docker-compose.override.yml
+.agency/
