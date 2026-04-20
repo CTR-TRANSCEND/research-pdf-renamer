@@ -6,6 +6,7 @@ from backend.services import PDFProcessor, LLMService, FileService
 from backend.utils.decorators import record_usage
 from backend.utils.auth import auth_required
 from werkzeug.utils import secure_filename
+import copy
 import os
 import logging
 import time
@@ -148,8 +149,11 @@ def upload_files():
         session_id = secrets.token_hex(8)
         job_id = secrets.token_hex(16)
 
-        # Capture script_root before leaving request context
+        # Capture request-context values before leaving the request handler.
+        # These are needed by the background thread which has no request context.
         script_root = request.script_root
+        client_ip = request.remote_addr
+        client_ua = request.headers.get("User-Agent", "")
 
         # Save files to temp directory and collect file info for background processing
         saved_files = []
@@ -212,7 +216,8 @@ def upload_files():
         thread = threading.Thread(
             target=_process_files_background,
             args=(app, job_id, saved_files, llm_svc, file_svc, pdf_proc,
-                  user_preferences, session_id, script_root, user_id),
+                  user_preferences, session_id, script_root, user_id,
+                  client_ip, client_ua),
             daemon=True,
         )
         thread.start()
@@ -230,7 +235,8 @@ def upload_files():
 
 
 def _process_files_background(app, job_id, saved_files, llm_svc, file_svc, pdf_proc,
-                               user_preferences, session_id, script_root, user_id):
+                               user_preferences, session_id, script_root, user_id,
+                               client_ip, client_ua):
     """Background thread that processes files and updates progress dict."""
     processed_files = []
     errors = []
@@ -385,9 +391,11 @@ def _process_files_background(app, job_id, saved_files, llm_svc, file_svc, pdf_p
         except Exception:
             pass
 
-        # Record usage statistics
+        # Record usage statistics (pass ip/ua captured from the original request
+        # because there is no Flask request context in this background thread).
         if processed_files:
-            record_usage(len(processed_files), user_id=user_id)
+            record_usage(len(processed_files), user_id=user_id,
+                         ip_address=client_ip, user_agent=client_ua)
 
         # Create download URL
         download_url = None
@@ -437,24 +445,27 @@ def get_progress(job_id):
 
     with _job_progress_lock:
         job = _job_progress.get(job_id)
+        if job is None:
+            return jsonify({"error": "Job not found"}), 404
 
-    if job is None:
-        return jsonify({"error": "Job not found"}), 404
+        # Snapshot all values under the lock so the background thread
+        # cannot mutate them while we build the response.
+        job_snapshot = copy.deepcopy(job)
 
     # Build response (don't expose internal fields like start_time)
     response = {
-        "status": job["status"],
-        "completed": job["completed"],
-        "total": job["total"],
-        "files": job["files"],
-        "errors": job["errors"],
-        "download_url": job["download_url"],
-        "elapsed_seconds": round(time.time() - job["start_time"], 1) if job["status"] == "processing" else job["elapsed_seconds"],
+        "status": job_snapshot["status"],
+        "completed": job_snapshot["completed"],
+        "total": job_snapshot["total"],
+        "files": job_snapshot["files"],
+        "errors": job_snapshot["errors"],
+        "download_url": job_snapshot["download_url"],
+        "elapsed_seconds": round(time.time() - job_snapshot["start_time"], 1) if job_snapshot["status"] == "processing" else job_snapshot["elapsed_seconds"],
     }
 
     # Include processed file details when complete
-    if job["status"] == "complete" and "processed_files" in job:
-        response["processed_files"] = job["processed_files"]
+    if job_snapshot["status"] == "complete" and "processed_files" in job_snapshot:
+        response["processed_files"] = job_snapshot["processed_files"]
 
     return jsonify(response)
 

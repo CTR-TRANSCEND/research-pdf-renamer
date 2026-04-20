@@ -120,13 +120,29 @@ def log_usage(files_processed: int):
     return decorator
 
 
-def record_usage(files_processed: int, user_id=None):
-    """Direct function to record usage in database (call after processing)."""
+def record_usage(files_processed: int, user_id=None, ip_address=None, user_agent=None):
+    """Direct function to record usage in database (call after processing).
+
+    Args:
+        files_processed: Number of files processed.
+        user_id: Optional user ID.
+        ip_address: Client IP. Falls back to request.remote_addr when called
+                    inside a request context (raises if called from a background
+                    thread without passing this explicitly).
+        user_agent: Client user-agent string. Same fallback behaviour as ip_address.
+    """
     try:
+        # Allow callers from background threads to pass ip/ua directly,
+        # falling back to the request context only when available.
+        if ip_address is None:
+            ip_address = request.remote_addr
+        if user_agent is None:
+            user_agent = request.headers.get("User-Agent", "")
+
         usage = Usage(
             user_id=user_id,
-            ip_address=request.remote_addr,
-            user_agent=request.headers.get("User-Agent", ""),
+            ip_address=ip_address,
+            user_agent=user_agent,
             files_processed=files_processed,
         )
         db.session.add(usage)
