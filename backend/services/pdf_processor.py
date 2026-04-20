@@ -46,40 +46,49 @@ class PDFProcessor:
 
         text_content = ""
         pages_processed = 0
-        found_abstract = False
-        found_required_info = False
 
         try:
-            # Get PDF info first to optimize processing
+            # Strategy: Try pymupdf FIRST (fastest, handles complex PDFs well)
+            # Only fall back to pdfplumber if pymupdf fails or returns insufficient text
+            text_content, pages_processed = self._pymupdf_extraction(pdf_path)
+
+            if text_content and len(text_content.strip()) >= 100:
+                logger.info(f"pymupdf extracted {len(text_content)} chars from {pages_processed} pages")
+                self._update_cache(file_hash, text_content, pages_processed)
+                return text_content, pages_processed
+
+            # pymupdf failed or returned too little text — try pdfplumber
+            logger.info(f"pymupdf insufficient ({len((text_content or '').strip())} chars), trying pdfplumber")
             pdf_info = self._get_pdf_info(pdf_path)
-            if not pdf_info or pdf_info['pages'] == 0:
-                return "", 0
+            if pdf_info and pdf_info['pages'] > 0:
+                if pdf_info['pages'] == 1 or not self.use_parallel_processing:
+                    text_content, pages_processed, _, _ = self._extract_sequential(pdf_path)
+                else:
+                    text_content, pages_processed, _, _ = self._extract_parallel(pdf_path)
 
-            # Use optimized extraction strategy based on PDF characteristics
-            if pdf_info['pages'] == 1 or not self.use_parallel_processing:
-                # Sequential processing for single page or when parallel is disabled
-                text_content, pages_processed, found_abstract, found_required_info = self._extract_sequential(pdf_path)
-            else:
-                # Parallel processing for multi-page PDFs
-                text_content, pages_processed, found_abstract, found_required_info = self._extract_parallel(pdf_path)
+                if text_content and len(text_content.strip()) >= 100:
+                    text_content = self._clean_text(text_content)
+                    self._update_cache(file_hash, text_content, pages_processed)
+                    return text_content, pages_processed
 
-            # Clean up the text
-            text_content = self._clean_text(text_content)
+            # Last resort: pypdf
+            logger.info("pdfplumber insufficient, trying pypdf fallback")
+            text, pages = self._fallback_extraction(pdf_path)
+            if text and len(text.strip()) >= 100:
+                self._update_cache(file_hash, text, pages)
+                return text, pages
 
-            # Cache the result
-            self._update_cache(file_hash, text_content, pages_processed)
-
-            return text_content, pages_processed
+            # Return whatever we got (may be empty)
+            best_text = max([text_content or "", text or ""], key=lambda t: len(t.strip()))
+            return best_text, pages_processed or pages
 
         except Exception as e:
             logger.error(f"Error processing PDF {os.path.basename(pdf_path)}: {e}")
-            # Fallback to pypdf, then pymupdf
-            text, pages = self._fallback_extraction(pdf_path)
-            if not text or len(text.strip()) < 100:
-                mupdf_text, mupdf_pages = self._pymupdf_extraction(pdf_path)
-                if mupdf_text and len(mupdf_text.strip()) > len((text or "").strip()):
-                    text, pages = mupdf_text, mupdf_pages
-            return text, pages
+            # Emergency fallback
+            text, pages = self._pymupdf_extraction(pdf_path)
+            if not text:
+                text, pages = self._fallback_extraction(pdf_path)
+            return text or "", pages or 0
 
     def _contains_abstract(self, text: str) -> bool:
         """Check if the page contains an abstract section."""

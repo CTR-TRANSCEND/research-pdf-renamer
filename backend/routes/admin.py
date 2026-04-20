@@ -1001,15 +1001,9 @@ def manage_llm_settings():
         # Get Ollama URL and models
         ollama_url = llm_settings.get("ollama_url", "http://localhost:11434")
 
-        # For Ollama provider, try to fetch models dynamically
-        # For other providers or if fetch fails, use empty list (will be fetched on demand)
-        ollama_models = []
+        # Always try to fetch Ollama models (local CPU fallback should always be visible)
+        ollama_models = _get_ollama_models(ollama_url)
         current_provider = llm_settings.get("provider", "openai")
-
-        if current_provider == "ollama":
-            # Try to fetch models, but don't block on failure
-            ollama_models = _get_ollama_models(ollama_url)
-            # If empty (connection failed), frontend will trigger fetch on user action
 
         # Get LM Studio models once to avoid duplicate API calls
         lm_studio_data = _get_lm_studio_models()
@@ -1053,9 +1047,9 @@ def manage_llm_settings():
                         "requires_api_key": True,
                     },
                     "ollama": {
-                        "name": "Ollama",
+                        "name": "Ollama (Local CPU)",
                         "models": ollama_models,
-                        "description": "Native Ollama server (API key optional)",
+                        "description": "Local CPU-based LLM via bundled Ollama (always available, slower)",
                         "requires_api_key": False,
                         "url": SystemSettings.get_provider_url("ollama"),
                     },
@@ -1198,6 +1192,12 @@ def manage_llm_settings():
         current_app.config["LLM_MODEL"] = model
         if provider in ["ollama", "openai-compatible", "lm-studio"] and ollama_url:
             current_app.config["OLLAMA_URL"] = ollama_url
+            if provider in ["openai-compatible", "lm-studio"]:
+                current_app.config["OPENAI_COMPATIBLE_API_URL"] = ollama_url
+
+        # Reset cached LLM service so next request uses new settings
+        from backend.routes.upload import reset_services
+        reset_services()
 
         return jsonify(
             {

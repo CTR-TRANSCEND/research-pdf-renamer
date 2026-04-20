@@ -8,6 +8,9 @@ from backend.utils.auth import auth_required
 from werkzeug.utils import secure_filename
 import os
 import logging
+import time
+import secrets
+import threading
 from datetime import datetime, timedelta, timezone
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -25,6 +28,65 @@ llm_service = None
 file_service = None
 
 
+def reset_services():
+    """Reset cached services so they reinitialize with fresh config on next use.
+    Called when admin saves LLM settings."""
+    global llm_service, file_service, pdf_processor
+    llm_service = None
+    file_service = None
+    pdf_processor = None
+
+# In-memory progress tracking for background jobs
+# Format: { job_id: { status, completed, total, files, errors, download_url, elapsed_seconds, start_time, created_at } }
+_job_progress = {}
+_job_progress_lock = threading.Lock()
+
+# Auto-clean interval tracking
+_last_cleanup_time = time.time()
+_CLEANUP_INTERVAL = 300  # Check every 5 minutes
+_JOB_TTL = 1800  # 30 minutes
+
+
+def _truncate_keywords(filename, max_keywords=5):
+    """Enforce max keyword count in filename: Author_Year_Journal_kw1-kw2-kw3-kw4-kw5.pdf"""
+    if not filename.endswith(".pdf"):
+        return filename
+    name = filename[:-4]  # strip .pdf
+    parts = name.split("_")
+    # Expected: Author_Year_Journal_keywords (4+ parts)
+    # Keywords are the last part(s) joined by underscore after Author_Year_Journal
+    if len(parts) < 4:
+        return filename
+    # First 3 parts: Author, Year, Journal. Rest is keywords.
+    prefix = "_".join(parts[:3])
+    keywords_part = "_".join(parts[3:])
+    # Keywords are hyphen-separated words
+    keywords = keywords_part.replace("_", "-").split("-")
+    if len(keywords) <= max_keywords:
+        return filename
+    # Truncate to max_keywords
+    truncated = "-".join(keywords[:max_keywords])
+    return f"{prefix}_{truncated}.pdf"
+
+
+def _cleanup_old_jobs():
+    """Remove job entries older than 30 minutes."""
+    global _last_cleanup_time
+    now = time.time()
+    if now - _last_cleanup_time < _CLEANUP_INTERVAL:
+        return
+    _last_cleanup_time = now
+    expired = []
+    with _job_progress_lock:
+        for job_id, job in _job_progress.items():
+            if now - job.get("created_at", now) > _JOB_TTL:
+                expired.append(job_id)
+        for job_id in expired:
+            del _job_progress[job_id]
+    if expired:
+        logger.info(f"Cleaned up {len(expired)} expired job(s)")
+
+
 def get_services():
     """Initialize services when needed"""
     global llm_service, file_service, pdf_processor
@@ -40,7 +102,7 @@ def get_services():
 
 @upload.route("/upload", methods=["POST"])
 def upload_files():
-    """Upload and process PDF files."""
+    """Upload and process PDF files - saves files, starts background processing, returns job_id."""
     try:
         # Check if files were uploaded
         if "files" not in request.files:
@@ -71,9 +133,6 @@ def upload_files():
                 {"error": f"Too many files. Maximum allowed: {max_files}"}
             ), 400
 
-        processed_files = []
-        errors = []
-
         # Get user info once before threading to avoid context issues
         user_id = (
             current_user.id if current_user and current_user.is_authenticated else None
@@ -86,104 +145,235 @@ def upload_files():
             }
 
         # Generate unique session ID for this batch
-        import secrets
         session_id = secrets.token_hex(8)
+        job_id = secrets.token_hex(16)
 
-        # Function to process a single file
-        def process_single_file(args):
-            i, file, path = args
+        # Capture script_root before leaving request context
+        script_root = request.script_root
+
+        # Save files to temp directory and collect file info for background processing
+        saved_files = []
+        save_errors = []
+        for i, file in enumerate(files):
+            path = paths[i] if paths and i < len(paths) else file.filename
             try:
-                # Validate file
-                is_valid, message = file_svc.validate_file(file)
-                if not is_valid:
-                    return ("error", None, None, f"{file.filename}: {message}")
-
-                # Save file temporarily
                 filepath, unique_filename = file_svc.save_uploaded_file(file)
+                saved_files.append({
+                    "index": i,
+                    "path": path,
+                    "original_filename": file.filename,
+                    "filepath": filepath,
+                    "unique_filename": unique_filename,
+                })
+            except Exception as e:
+                save_errors.append(f"{path}: Failed to save - {str(e)}")
 
-                # Validate PDF
-                if not pdf_proc.validate_pdf(filepath):
-                    file_svc.cleanup_file(filepath)
-                    return ("error", None, None, f"{path}: Invalid or corrupted PDF file")
+        total_files = len(saved_files)
+        if total_files == 0 and save_errors:
+            return jsonify({"error": "No files were saved successfully", "details": save_errors}), 400
 
-                # Extract text from PDF
-                text, pages_processed = pdf_proc.extract_text_from_pdf(filepath)
-                if not text:
-                    file_svc.cleanup_file(filepath)
-                    return ("error", None, None, f"{path}: Could not extract text from PDF")
+        # Initialize job progress
+        file_statuses = []
+        for sf in saved_files:
+            file_statuses.append({
+                "name": sf["path"],
+                "status": "pending",
+                "new_name": None,
+                "error": None,
+            })
+        # Also add save errors as already-failed
+        for err in save_errors:
+            name = err.split(":")[0].strip() if ":" in err else err
+            file_statuses.append({
+                "name": name,
+                "status": "error",
+                "new_name": None,
+                "error": err,
+            })
 
-                # Get metadata from LLM
+        with _job_progress_lock:
+            _job_progress[job_id] = {
+                "status": "processing",
+                "completed": 0,
+                "total": total_files + len(save_errors),
+                "files": file_statuses,
+                "errors": list(save_errors),
+                "download_url": None,
+                "elapsed_seconds": 0,
+                "start_time": time.time(),
+                "created_at": time.time(),
+            }
+
+        # Get Flask app for context in background thread
+        from flask import current_app
+        app = current_app._get_current_object()
+
+        # Start background processing thread
+        thread = threading.Thread(
+            target=_process_files_background,
+            args=(app, job_id, saved_files, llm_svc, file_svc, pdf_proc,
+                  user_preferences, session_id, script_root, user_id),
+            daemon=True,
+        )
+        thread.start()
+
+        # Cleanup old jobs periodically
+        _cleanup_old_jobs()
+
+        return jsonify({"job_id": job_id, "total": total_files + len(save_errors)})
+
+    except Exception as e:
+        logger.error(f"Upload processing failed: {type(e).__name__}: {str(e)}", exc_info=True)
+        return jsonify(
+            {"error": "Server error during file processing"}
+        ), 500
+
+
+def _process_files_background(app, job_id, saved_files, llm_svc, file_svc, pdf_proc,
+                               user_preferences, session_id, script_root, user_id):
+    """Background thread that processes files and updates progress dict."""
+    processed_files = []
+    errors = []
+
+    def _update_file_stage(file_info, stage):
+        """Update the processing stage for a file in the progress dict."""
+        with _job_progress_lock:
+            job = _job_progress.get(job_id)
+            if job:
+                file_index = file_info["index"]
+                job["files"][file_index]["status"] = stage
+
+    def process_single_file(file_info):
+        """Process a single file. Returns (status, file_result, error_msg)."""
+        path = file_info["path"]
+        filepath = file_info["filepath"]
+        original_filename = file_info["original_filename"]
+
+        try:
+            # Validate PDF
+            if not pdf_proc.validate_pdf(filepath):
+                file_svc.cleanup_file(filepath)
+                return ("error", None, f"{path}: Invalid or corrupted PDF file")
+
+            # Extract text from PDF
+            _update_file_stage(file_info, "extracting")
+            text, pages_processed = pdf_proc.extract_text_from_pdf(filepath)
+            if not text:
+                file_svc.cleanup_file(filepath)
+                return ("error", None, f"{path}: Could not extract text from PDF")
+
+            # Get metadata from LLM (auto-retry once on INVALID_RESPONSE)
+            _update_file_stage(file_info, "analyzing")
+            metadata, extraction_error = llm_svc.extract_paper_metadata(
+                text, user_preferences
+            )
+
+            if not metadata and extraction_error and extraction_error.value == "invalid_response":
+                # Retry once — LLM responses can be non-deterministic
+                _update_file_stage(file_info, "retrying")
+                logger.info(f"Retrying LLM extraction for {path} (first attempt returned invalid response)")
                 metadata, extraction_error = llm_svc.extract_paper_metadata(
                     text, user_preferences
                 )
 
-                if not metadata:
-                    file_svc.cleanup_file(filepath)
-                    if extraction_error:
-                        error_message = llm_svc.get_error_message(extraction_error)
-                        return ("error", None, None, f"{path}: {error_message}")
-                    else:
-                        return ("error", None, None, f"{path}: Could not extract metadata")
-
-                # Validate suggested filename
-                suggested_name = metadata.get("suggested_filename", "")
-                if not llm_svc.validate_filename(suggested_name):
-                    safe_name = secure_filename(file.filename)
-                    name_part = os.path.splitext(safe_name)[0]
-                    suggested_name = f"{name_part}_renamed.pdf"
-
-                # Rename file with session isolation
-                download_path = file_svc.move_to_downloads(
-                    filepath, suggested_name, session_id=session_id
-                )
-
-                file_info = {
-                    "original_name": path,
-                    "original_filename": file.filename,
-                    "new_name": suggested_name,
-                    "download_path": download_path,
-                    "metadata": metadata,
-                    "pages_processed": pages_processed,
-                }
-                return ("success", file_info, None, None)
-
-            except Exception as e:
-                if "filepath" in locals():
-                    file_svc.cleanup_file(filepath)
-                return ("error", None, None, f"{path}: Processing error - {str(e)}")
-
-        # Prepare arguments for parallel processing
-        file_args = []
-        for i, file in enumerate(files):
-            path = paths[i] if paths and i < len(paths) else file.filename
-            file_args.append((i, file, path))
-
-        # Process files in parallel using shared thread pool
-        future_to_file = {
-            _file_processor_pool.submit(process_single_file, args): args[2]
-            for args in file_args
-        }
-
-        for future in as_completed(future_to_file):
-            try:
-                result, file_info, filepath, error = future.result()
-                if result == "success":
-                    processed_files.append(file_info)
+            if not metadata:
+                file_svc.cleanup_file(filepath)
+                if extraction_error:
+                    error_message = llm_svc.get_error_message(extraction_error)
+                    return ("error", None, f"{path}: {error_message}")
                 else:
-                    errors.append(error)
-            except Exception as e:
-                path = future_to_file[future]
-                errors.append(f"{path}: Processing error - {str(e)}")
+                    return ("error", None, f"{path}: Could not extract metadata")
 
+            # Post-processing and renaming
+            _update_file_stage(file_info, "renaming")
+
+            # Validate suggested filename
+            suggested_name = metadata.get("suggested_filename", "")
+            if not llm_svc.validate_filename(suggested_name):
+                safe_name = secure_filename(original_filename)
+                name_part = os.path.splitext(safe_name)[0]
+                suggested_name = f"{name_part}_renamed.pdf"
+
+            # Enforce max 5 keywords: Author_Year_Journal_kw1-kw2-kw3-kw4-kw5.pdf
+            # Split by underscore, find the keywords portion (after Author_Year_Journal),
+            # and truncate if more than 5 hyphen-separated words
+            suggested_name = _truncate_keywords(suggested_name, max_keywords=5)
+
+            # Rename file with session isolation
+            download_path = file_svc.move_to_downloads(
+                filepath, suggested_name, session_id=session_id
+            )
+
+            file_result = {
+                "original_name": path,
+                "original_filename": original_filename,
+                "new_name": suggested_name,
+                "download_path": download_path,
+                "metadata": metadata,
+                "pages_processed": pages_processed,
+            }
+            return ("success", file_result, None)
+
+        except Exception as e:
+            try:
+                file_svc.cleanup_file(filepath)
+            except Exception:
+                pass
+            return ("error", None, f"{path}: Processing error - {str(e)}")
+
+    # Process files using ThreadPoolExecutor within this background thread
+    # Stagger submissions by 0.5s to avoid overwhelming the LLM server
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS, thread_name_prefix="bg_processor") as executor:
+        future_to_info = {}
+        for i, sf in enumerate(saved_files):
+            future_to_info[executor.submit(process_single_file, sf)] = sf
+            if i < len(saved_files) - 1:
+                time.sleep(0.5)
+
+        for future in as_completed(future_to_info):
+            file_info = future_to_info[future]
+            try:
+                status, file_result, error_msg = future.result()
+            except Exception as e:
+                status = "error"
+                file_result = None
+                error_msg = f"{file_info['path']}: Processing error - {str(e)}"
+
+            # Update progress
+            with _job_progress_lock:
+                job = _job_progress.get(job_id)
+                if job is None:
+                    return
+                job["completed"] += 1
+                job["elapsed_seconds"] = round(time.time() - job["start_time"], 1)
+
+                # Find and update the file entry
+                file_index = file_info["index"]
+                f = job["files"][file_index]
+                if status == "success":
+                    f["status"] = "complete"
+                    f["new_name"] = file_result["new_name"]
+                else:
+                    f["status"] = "error"
+                    f["error"] = error_msg
+
+                if status == "success":
+                    processed_files.append(file_result)
+                else:
+                    errors.append(error_msg)
+                    job["errors"].append(error_msg)
+
+    # All files processed - finalize
+    with app.app_context():
         # Record upload metrics
         try:
             from backend.utils.metrics_collector import MetricsCollector
             _metrics = MetricsCollector.get_instance()
-            for file_info in processed_files:
+            for file_result in processed_files:
                 _size = 0
                 try:
                     _download_filepath = os.path.join(
-                        file_svc.upload_folder, "downloads", file_info["download_path"]
+                        file_svc.upload_folder, "downloads", file_result["download_path"]
                     )
                     if os.path.exists(_download_filepath):
                         _size = os.path.getsize(_download_filepath)
@@ -195,35 +385,20 @@ def upload_files():
         except Exception:
             pass
 
-        # Return results
-        if not processed_files and errors:
-            return jsonify(
-                {"error": "No files were processed successfully", "details": errors}
-            ), 400
-
         # Record usage statistics
-        record_usage(len(processed_files), user_id=user_id)
+        if processed_files:
+            record_usage(len(processed_files), user_id=user_id)
 
         # Create download URL
+        download_url = None
         if len(processed_files) == 1:
             single_file = processed_files[0]
-            download_url = (
-                f"{request.script_root}/api/download/{single_file['download_path']}"
-            )
+            download_url = f"{script_root}/api/download/{single_file['download_path']}"
             filepath = os.path.join(
                 file_svc.upload_folder, "downloads", single_file["download_path"]
             )
             file_svc.schedule_cleanup(filepath)
-
-            return jsonify(
-                {
-                    "message": "File processed successfully",
-                    "download_url": download_url,
-                    "file": single_file,
-                    "errors": errors,
-                }
-            )
-        else:
+        elif len(processed_files) > 1:
             zip_files = []
             for pf in processed_files:
                 filepath = os.path.join(
@@ -238,26 +413,50 @@ def upload_files():
             zip_rel_path = os.path.relpath(
                 zip_full_path, os.path.join(file_svc.upload_folder, "downloads")
             )
-            download_url = f"{request.script_root}/api/download/{zip_rel_path}"
+            download_url = f"{script_root}/api/download/{zip_rel_path}"
 
             for filepath, _ in zip_files:
                 file_svc.cleanup_file(filepath)
             file_svc.schedule_cleanup(zip_full_path)
 
-            return jsonify(
-                {
-                    "message": f"Successfully processed {len(processed_files)} files",
-                    "download_url": download_url,
-                    "files": processed_files,
-                    "errors": errors,
-                }
-            )
+    # Mark job as complete
+    with _job_progress_lock:
+        job = _job_progress.get(job_id)
+        if job:
+            job["status"] = "complete"
+            job["download_url"] = download_url
+            job["elapsed_seconds"] = round(time.time() - job["start_time"], 1)
+            # Store processed file details for the final response
+            job["processed_files"] = processed_files
 
-    except Exception as e:
-        logger.error(f"Upload processing failed: {type(e).__name__}: {str(e)}", exc_info=True)
-        return jsonify(
-            {"error": "Server error during file processing"}
-        ), 500
+
+@upload.route("/upload/progress/<job_id>", methods=["GET"])
+def get_progress(job_id):
+    """Get the processing progress for a job."""
+    _cleanup_old_jobs()
+
+    with _job_progress_lock:
+        job = _job_progress.get(job_id)
+
+    if job is None:
+        return jsonify({"error": "Job not found"}), 404
+
+    # Build response (don't expose internal fields like start_time)
+    response = {
+        "status": job["status"],
+        "completed": job["completed"],
+        "total": job["total"],
+        "files": job["files"],
+        "errors": job["errors"],
+        "download_url": job["download_url"],
+        "elapsed_seconds": round(time.time() - job["start_time"], 1) if job["status"] == "processing" else job["elapsed_seconds"],
+    }
+
+    # Include processed file details when complete
+    if job["status"] == "complete" and "processed_files" in job:
+        response["processed_files"] = job["processed_files"]
+
+    return jsonify(response)
 
 
 @upload.route("/download/<path:filepath>")

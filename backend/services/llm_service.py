@@ -68,12 +68,18 @@ class PaperMetadata(BaseModel):
     @field_validator("suggested_filename")
     @classmethod
     def validate_filename(cls, v: str) -> str:
-        """Ensure filename is safe and ends with .pdf."""
+        """Ensure filename is safe and ends with .pdf. Auto-sanitize common issues."""
         if not v.lower().endswith(".pdf"):
-            raise ValueError("Suggested filename must end with .pdf")
-        # Check for valid characters: letters, numbers, hyphens, underscores, and dots
+            v = v.rstrip(".") + ".pdf"
+        # Auto-fix: replace spaces with hyphens, remove other invalid chars
+        name = v[:-4]  # strip .pdf
+        name = name.replace(" ", "-")
+        name = re.sub(r"[^A-Za-z0-9._-]", "", name)
+        name = re.sub(r"-+", "-", name)  # collapse multiple hyphens
+        name = name.strip("-_.")
+        v = name + ".pdf"
         if not re.match(r"^[A-Za-z0-9._-]+\.pdf$", v):
-            raise ValueError("Filename contains invalid characters")
+            raise ValueError("Filename contains invalid characters after sanitization")
         return v
 
     model_config = ConfigDict(
@@ -111,7 +117,7 @@ class LLMService:
 
         # Text processing limits
         self.min_text_length = self.config.get("MIN_TEXT_LENGTH") or 50
-        self.max_text_length = self.config.get("MAX_TEXT_LENGTH") or 8000
+        self.max_text_length = self.config.get("MAX_TEXT_LENGTH") or 3000
 
         # Context window configuration (for LM Studio)
         self.context_window = self._load_context_window()
@@ -579,7 +585,8 @@ class LLMService:
             logger.error(f"OpenAI-compatible connection error: {e}")
             return None, ExtractionError.SERVICE_UNAVAILABLE
         except httpx.HTTPStatusError as e:
-            logger.error(f"OpenAI-compatible HTTP error: {e.response.status_code}")
+            error_body = e.response.text[:500] if e.response else "no body"
+            logger.error(f"OpenAI-compatible HTTP error: {e.response.status_code} - {error_body}")
             if e.response.status_code == 404:
                 logger.error(
                     f"Model '{self.model}' not found or endpoint not supported. Server may be native Ollama."
@@ -753,15 +760,23 @@ Rules for filename:
         format_rules = {
             "Author_Year_Journal_Keywords": """
 Rules for filename:
-- Format: Author_Year_Journal_KeyWords
+- Format: Author_Year_Journal_keyword1-keyword2-keyword3.pdf
 - Use only the primary author's last name
 - Include the 4-digit year
 - Include abbreviated journal name (standard abbreviation)
-- Extract 3-5 key words from the title that represent the core research
-- Use hyphens to connect multi-word keywords (e.g., "NF-κB-mediated")
-- Remove special characters except hyphens, use only letters, numbers, underscores, and hyphens
-- Keep keywords concise but descriptive
+- Keywords section: pick 3-5 of the most important single words, separated by hyphens
+- CRITICAL: Each keyword must be ONE word only. Never concatenate words together.
+  WRONG: "insulinresistance" or "deeplearning" or "weightloss"
+  RIGHT: "insulin-resistance" or "deep-learning" or "weight-loss"
+- Maximum 5 keywords (hyphen-separated words). Count each word individually.
+- Use underscores (_) ONLY to separate Author, Year, Journal, and Keywords sections
+- Use hyphens (-) ONLY between keywords within the keywords section
+- Remove special characters, use only letters, numbers, underscores, and hyphens
 - End with .pdf
+- Examples:
+  Smith_2024_Nature_obesity-insulin-resistance.pdf
+  Lee_2023_Cell_CRISPR-gene-editing-cancer.pdf
+  Wang_2025_Science_single-cell-RNA-seq.pdf
 """,
             "Author_Year_Title": """
 Rules for filename:

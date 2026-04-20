@@ -4,6 +4,7 @@ let selectedFolders = [];
 let currentUser = null;
 let userLimits = null;
 let uploadMode = 'files'; // 'files' or 'folder'
+let _pollingInterval = null; // For progress polling
 
 // HTML escaping utility to prevent XSS
 function escapeHtml(str) {
@@ -241,7 +242,7 @@ function displaySelectedFiles() {
 
     filesToDisplay.forEach((item, index) => {
         const fileItem = document.createElement('div');
-        fileItem.className = 'flex items-center justify-between p-3 bg-gray-50 rounded-lg';
+        fileItem.className = 'flex items-center justify-between py-1.5 px-3 bg-gray-50 rounded';
 
         const fileName = uploadMode === 'folder' ? item.path : item.name;
         const fileSize = uploadMode === 'folder' ? item.file.size : item.size;
@@ -279,6 +280,17 @@ function updateProcessButton() {
     const processBtn = document.getElementById('process-btn');
     const hasFiles = uploadMode === 'folder' ? selectedFolders.length > 0 : selectedFiles.length > 0;
     processBtn.disabled = !hasFiles;
+}
+
+// Format elapsed time for display
+function formatElapsedTime(seconds) {
+    if (seconds < 60) {
+        return `${seconds.toFixed(1)} seconds`;
+    } else {
+        const minutes = Math.floor(seconds / 60);
+        const remainingSeconds = Math.round(seconds % 60);
+        return `${minutes} minute${minutes > 1 ? 's' : ''} ${remainingSeconds} second${remainingSeconds !== 1 ? 's' : ''}`;
+    }
 }
 
 // Process files
@@ -324,39 +336,32 @@ async function processFiles() {
             headers: {
                 'Content-Type': 'multipart/form-data'
             },
-            timeout: 600000, // 10 minute timeout for large batches
+            timeout: 60000, // 1 minute timeout for upload only (processing is async now)
             onUploadProgress: (progressEvent) => {
                 const percentCompleted = Math.round(
                     (progressEvent.loaded * 100) / progressEvent.total
                 );
                 updateModalProgress(percentCompleted, `Uploading files... ${percentCompleted}%`);
-                if (percentCompleted >= 100) {
-                    // Upload done, now server is processing with LLM
-                    updateModalProgress(100, `Processing ${totalFiles} files with AI... This may take a few minutes.`);
-                    filesToProcess.forEach(item => {
-                        const name = uploadMode === 'folder' ? item.path : item.name;
-                        updateFileProgress(name, 'Processing...', 50);
-                    });
-                }
             }
         });
 
-        // Update progress to show processing complete
-        updateModalProgress(100, 'Processing complete!');
+        // Upload returned job_id - start polling for progress
+        const jobId = response.data.job_id;
+        if (!jobId) {
+            // Fallback: old-style synchronous response (shouldn't happen but be safe)
+            handleSynchronousResponse(response.data, filesToProcess, totalFiles);
+            return;
+        }
+
+        // Switch UI to processing state
+        updateModalProgress(100, `Processing 0 of ${totalFiles} files with AI...`);
         filesToProcess.forEach(item => {
             const name = uploadMode === 'folder' ? item.path : item.name;
-            updateFileProgress(name, 'Complete', 100);
+            updateFileProgress(name, 'Processing...', 25);
         });
 
-        // Handle response - transition modal to complete state
-        if (response.data.download_url) {
-            setTimeout(() => {
-                showResultsInModal(response.data, totalFiles);
-                setTimeout(() => {
-                    window.location.href = response.data.download_url;
-                }, 500);
-            }, 800);
-        }
+        // Start polling
+        startProgressPolling(jobId, filesToProcess, totalFiles);
 
     } catch (error) {
         console.error('Processing error:', error);
@@ -382,18 +387,162 @@ async function processFiles() {
         }
 
         showErrorInModal(errorMsg, error.response?.data?.details);
-    } finally {
-        // Reset button
-        processBtn.disabled = false;
-        processBtn.innerHTML = '<i class="fas fa-magic mr-2"></i>Process Files';
-        selectedFiles = [];
-        selectedFolders = [];
-        displaySelectedFiles();
-        const fileInput = document.getElementById('file-input');
-        const folderInput = document.getElementById('folder-input');
-        if (fileInput) fileInput.value = '';
-        if (folderInput) folderInput.value = '';
+        resetProcessButton();
     }
+}
+
+// Start polling for job progress
+function startProgressPolling(jobId, filesToProcess, totalFiles) {
+    // Clear any existing polling
+    if (_pollingInterval) {
+        clearInterval(_pollingInterval);
+        _pollingInterval = null;
+    }
+
+    _pollingInterval = setInterval(async () => {
+        try {
+            const response = await axios.get(`upload/progress/${jobId}`, { timeout: 10000 });
+            const progress = response.data;
+
+            // Update overall progress
+            const completedCount = progress.completed;
+            const pct = totalFiles > 0 ? Math.round((completedCount / totalFiles) * 100) : 0;
+            updateModalProgress(pct, `Processing ${completedCount} of ${totalFiles} files with AI...`);
+
+            // Update individual file statuses
+            if (progress.files) {
+                progress.files.forEach(fileStatus => {
+                    if (fileStatus.status === 'extracting') {
+                        updateFileProgress(fileStatus.name, 'Extracting text...', 20);
+                    } else if (fileStatus.status === 'analyzing') {
+                        updateFileProgress(fileStatus.name, 'Analyzing with AI...', 50);
+                    } else if (fileStatus.status === 'retrying') {
+                        updateFileProgress(fileStatus.name, 'Retrying AI analysis...', 50);
+                    } else if (fileStatus.status === 'renaming') {
+                        updateFileProgress(fileStatus.name, 'Renaming...', 80);
+                    } else if (fileStatus.status === 'complete') {
+                        const displayText = fileStatus.new_name
+                            ? `Done: ${fileStatus.new_name}`
+                            : 'Complete';
+                        updateFileProgress(fileStatus.name, displayText, 100, 'success');
+                    } else if (fileStatus.status === 'error') {
+                        const errText = fileStatus.error
+                            ? fileStatus.error.split(':').slice(1).join(':').trim() || 'Failed'
+                            : 'Failed';
+                        updateFileProgress(fileStatus.name, errText, 100, 'error');
+                    } else if (fileStatus.status === 'pending') {
+                        updateFileProgress(fileStatus.name, 'Waiting...', 5);
+                    }
+                });
+            }
+
+            // Check if done
+            if (progress.status === 'complete' || progress.status === 'error') {
+                clearInterval(_pollingInterval);
+                _pollingInterval = null;
+
+                // Build a response-like data object for showResultsInModal
+                const resultData = {
+                    download_url: progress.download_url,
+                    errors: progress.errors || [],
+                    elapsed_seconds: progress.elapsed_seconds,
+                };
+
+                // Populate files from progress
+                if (progress.processed_files && progress.processed_files.length > 0) {
+                    if (progress.processed_files.length === 1) {
+                        resultData.file = progress.processed_files[0];
+                    } else {
+                        resultData.files = progress.processed_files;
+                    }
+                    resultData.message = `Successfully processed ${progress.processed_files.length} files`;
+                } else {
+                    resultData.files = [];
+                }
+
+                // Store failed file objects for retry
+                if (resultData.errors && resultData.errors.length > 0) {
+                    const failedNames = resultData.errors.map(e => {
+                        const colonIdx = e.indexOf(':');
+                        return colonIdx > 0 ? e.substring(0, colonIdx).trim() : '';
+                    });
+                    window._lastFailedFileObjects = filesToProcess.filter(item => {
+                        const name = uploadMode === 'folder' ? item.path : item.name;
+                        return failedNames.some(fn => name === fn || name.includes(fn));
+                    });
+                } else {
+                    window._lastFailedFileObjects = [];
+                }
+
+                // Show results
+                updateModalProgress(100, 'Processing complete!');
+
+                setTimeout(() => {
+                    showResultsInModal(resultData, totalFiles);
+                    if (resultData.download_url) {
+                        setTimeout(() => {
+                            window.location.href = resultData.download_url;
+                        }, 500);
+                    }
+                }, 500);
+
+                resetProcessButton();
+            }
+
+        } catch (pollError) {
+            console.error('Polling error:', pollError);
+            // Don't stop polling on transient errors, just log
+        }
+    }, 5000); // Poll every 5 seconds
+}
+
+// Reset the process button and clear selections
+function resetProcessButton() {
+    const processBtn = document.getElementById('process-btn');
+    processBtn.disabled = false;
+    processBtn.innerHTML = '<i class="fas fa-magic mr-2"></i>Process Files';
+    selectedFiles = [];
+    selectedFolders = [];
+    displaySelectedFiles();
+    const fileInput = document.getElementById('file-input');
+    const folderInput = document.getElementById('folder-input');
+    if (fileInput) fileInput.value = '';
+    if (folderInput) folderInput.value = '';
+}
+
+// Handle old-style synchronous response (fallback)
+function handleSynchronousResponse(data, filesToProcess, totalFiles) {
+    updateModalProgress(100, 'Processing complete!');
+    filesToProcess.forEach(item => {
+        const name = uploadMode === 'folder' ? item.path : item.name;
+        updateFileProgress(name, 'Complete', 100);
+    });
+
+    if (data.errors && data.errors.length > 0) {
+        const failedNames = data.errors.map(e => {
+            const colonIdx = e.indexOf(':');
+            return colonIdx > 0 ? e.substring(0, colonIdx).trim() : '';
+        });
+        window._lastFailedFileObjects = filesToProcess.filter(item => {
+            const name = uploadMode === 'folder' ? item.path : item.name;
+            return failedNames.some(fn => name === fn || name.includes(fn));
+        });
+    } else {
+        window._lastFailedFileObjects = [];
+    }
+
+    if (data.download_url) {
+        setTimeout(() => {
+            showResultsInModal(data, totalFiles);
+            setTimeout(() => {
+                window.location.href = data.download_url;
+            }, 500);
+        }, 800);
+    } else if (data.errors) {
+        showResultsInModal(data, totalFiles);
+    }
+
+    resetProcessButton();
 }
 
 // Show processing modal
@@ -468,6 +617,18 @@ function showResultsInModal(data, totalSubmitted = 1) {
     // Build results content
     let html = '<div class="space-y-4">';
 
+    // Elapsed time display
+    if (data.elapsed_seconds !== undefined && data.elapsed_seconds !== null) {
+        html += `
+            <div class="bg-indigo-50 p-3 rounded-lg text-center">
+                <p class="text-sm text-indigo-800 font-medium">
+                    <i class="fas fa-clock mr-1"></i>
+                    Completed in ${formatElapsedTime(data.elapsed_seconds)}
+                </p>
+            </div>
+        `;
+    }
+
     if (data.file) {
         // Single file
         html += `
@@ -480,13 +641,14 @@ function showResultsInModal(data, totalSubmitted = 1) {
             </div>
         `;
     } else if (data.files && data.files.length > 0) {
-        // Multiple files
-        html += '<h3 class="font-semibold text-gray-900 mb-2">Successfully Renamed Files:</h3>';
-        html += '<div class="max-h-40 overflow-y-auto space-y-2">';
+        // Multiple files - compact list
+        html += '<h3 class="font-semibold text-gray-900 mb-1">Successfully Renamed Files:</h3>';
+        html += '<div class="max-h-48 overflow-y-auto divide-y divide-gray-200">';
         data.files.forEach(file => {
             html += `
-                <div class="bg-gray-50 p-3 rounded">
-                    <p class="text-sm"><strong>${file.original_name}</strong> &rarr; ${file.new_name}</p>
+                <div class="py-1.5 px-2">
+                    <p class="text-xs text-gray-500 truncate">${file.original_name}</p>
+                    <p class="text-sm text-gray-900 truncate">&rarr; ${file.new_name}</p>
                 </div>
             `;
         });
@@ -494,31 +656,63 @@ function showResultsInModal(data, totalSubmitted = 1) {
     }
 
     if (data.errors && data.errors.length > 0) {
+        // Extract filenames from error messages (format: "filename.pdf: error message")
+        const failedFiles = data.errors.map(error => {
+            const colonIdx = error.indexOf(':');
+            return colonIdx > 0 ? error.substring(0, colonIdx).trim() : error;
+        });
+
         html += `
             <div class="bg-yellow-50 p-4 rounded-lg">
-                <h3 class="font-semibold text-yellow-800 mb-2">Errors:</h3>
+                <h3 class="font-semibold text-yellow-800 mb-2">Errors (${data.errors.length}):</h3>
                 <ul class="text-sm text-yellow-700 space-y-1">
                     ${data.errors.map(error => `<li>&bull; ${error}</li>`).join('')}
                 </ul>
+                <button onclick="retryFailedFiles()" class="mt-3 px-4 py-2 bg-yellow-600 text-white text-sm font-medium rounded-lg hover:bg-yellow-700 transition-colors">
+                    <i class="fas fa-redo mr-1"></i> Retry Failed Files
+                </button>
+            </div>
+        `;
+
+        // Store failed filenames for retry
+        window._lastFailedFiles = failedFiles;
+    }
+
+    if (data.download_url) {
+        html += `
+            <div class="bg-blue-50 p-4 rounded-lg">
+                <p class="text-sm text-blue-800">
+                    <i class="fas fa-download mr-1"></i>
+                    Your download should start automatically. If not,
+                    <a href="${data.download_url}" class="underline font-semibold">click here</a>.
+                </p>
             </div>
         `;
     }
 
+    // Always add a Close button at the bottom right
     html += `
-        <div class="bg-blue-50 p-4 rounded-lg">
-            <p class="text-sm text-blue-800">
-                <i class="fas fa-download mr-1"></i>
-                Your download should start automatically. If not,
-                <a href="${data.download_url}" class="underline font-semibold">click here</a>.
-            </p>
+        <div class="flex justify-end mt-4">
+            <button onclick="closeProcessingModal()" class="px-4 py-2 bg-gray-600 text-white text-sm font-medium rounded-lg hover:bg-gray-700 transition-colors">
+                <i class="fas fa-times mr-1"></i> Close
+            </button>
         </div>
-    </div>`;
+    `;
+
+    html += '</div>';
 
     content.innerHTML = html;
 
     // Transition to complete state
     processingState.classList.add('hidden');
     completeState.classList.remove('hidden');
+
+    // Auto-close after 20 seconds if all files succeeded (no errors)
+    if (!data.errors || data.errors.length === 0) {
+        window._autoCloseTimeout = setTimeout(() => {
+            closeProcessingModal();
+        }, 20000);
+    }
 }
 
 // Show error in modal
@@ -564,11 +758,43 @@ function showErrorInModal(errorMsg, details) {
     completeState.classList.remove('hidden');
 }
 
+// Retry failed files from last upload
+function retryFailedFiles() {
+    if (!window._lastFailedFileObjects || window._lastFailedFileObjects.length === 0) {
+        showToast('No failed files to retry', 'error');
+        return;
+    }
+
+    // Close the modal
+    closeProcessingModal();
+
+    // Set the failed files as the new selection and trigger processing
+    selectedFiles = window._lastFailedFileObjects;
+    uploadMode = 'files';
+    displaySelectedFiles();
+    updateProcessButton();
+
+    // Auto-trigger processing after a short delay
+    setTimeout(() => {
+        processFiles();
+    }, 300);
+}
+
 // Close processing modal
 function closeProcessingModal() {
     document.getElementById('processing-modal').classList.add('hidden');
     // Show summary stats again for next time
     document.getElementById('summary-stats').classList.remove('hidden');
+    // Stop any active polling
+    if (_pollingInterval) {
+        clearInterval(_pollingInterval);
+        _pollingInterval = null;
+    }
+    // Clear auto-close timer
+    if (window._autoCloseTimeout) {
+        clearTimeout(window._autoCloseTimeout);
+        window._autoCloseTimeout = null;
+    }
 }
 
 // Create progress item for file
@@ -578,7 +804,7 @@ function createProgressItem(fileName) {
     div.id = `progress-${fileName.replace(/[^a-zA-Z0-9]/g, '-')}`;
     div.innerHTML = `
         <div class="flex items-center flex-1">
-            <i class="fas fa-file-pdf text-red-600 mr-3"></i>
+            <i class="fas fa-file-pdf text-red-600 mr-3 file-icon"></i>
             <div class="flex-1">
                 <p class="font-medium text-gray-900 text-sm">${fileName}</p>
                 <p class="text-xs text-gray-500 status-text">Waiting...</p>
@@ -602,6 +828,7 @@ function updateFileProgress(fileName, status, percent, type = 'success') {
 
     const statusText = element.querySelector('.status-text');
     const progressFill = element.querySelector('.progress-fill');
+    const fileIcon = element.querySelector('.file-icon');
 
     statusText.textContent = status;
     progressFill.style.width = `${percent}%`;
@@ -609,9 +836,15 @@ function updateFileProgress(fileName, status, percent, type = 'success') {
     if (type === 'error') {
         progressFill.className = 'progress-fill bg-red-600 h-2 rounded-full';
         statusText.className = 'text-xs text-red-600 status-text';
-    } else if (percent === 100) {
+        if (fileIcon) {
+            fileIcon.className = 'fas fa-times-circle text-red-600 mr-3 file-icon';
+        }
+    } else if (percent === 100 && type === 'success') {
         progressFill.className = 'progress-fill bg-green-600 h-2 rounded-full';
         statusText.className = 'text-xs text-green-600 status-text';
+        if (fileIcon) {
+            fileIcon.className = 'fas fa-check-circle text-green-600 mr-3 file-icon';
+        }
     }
 }
 

@@ -34,6 +34,6 @@ LABEL org.opencontainers.image.description="Research PDF File Renamer - AI-power
 LABEL org.opencontainers.image.licenses="MIT"
 
 # Run with gunicorn
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "3", "--threads", "4", \
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "1", "--threads", "12", \
      "--worker-class", "gthread", "--timeout", "600", "--access-logfile", "-", \
      "--error-logfile", "-", "backend.app:create_app('production')"]
