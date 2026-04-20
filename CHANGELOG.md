@@ -2,6 +2,13 @@
 
 All notable changes to Research PDF File Renamer are documented here.
 
+## [0.3.4] - 2026-04-20
+
+### Fixed
+- **`record_usage()` crash in background thread** -- Was accessing `request.remote_addr` outside request context. Now accepts pre-captured IP/UA parameters.
+- **Race condition in progress endpoint** -- Job dict was read outside the lock; background thread could mutate it mid-response. Now uses `copy.deepcopy()` under the lock.
+- **`max_tokens` too low for reasoning models** -- Gemma-4 and other thinking models use tokens for internal reasoning. Increased to 1000 for openai-compatible provider to accommodate chain-of-thought overhead.
+
 ## [0.3.3] - 2026-04-20
 
 ### Added

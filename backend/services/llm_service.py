@@ -496,14 +496,12 @@ class LLMService:
         # Create prompt
         prompt = self._create_prompt(text, user_preferences)
 
-        # Calculate max_tokens based on context window for LM Studio
-        # For LM Studio, use up to 1/3 of context window for output (leaving room for input)
-        # Minimum 500 tokens, maximum based on context window
+        # Calculate max_tokens — reasoning/thinking models need more headroom
+        # (they use tokens for internal chain-of-thought before producing output)
         if self.provider == "lm-studio":
-            max_tokens = max(500, self.context_window // 3)
-            logger.info(
-                f"Using max_tokens={max_tokens} for LM Studio (context_window={self.context_window})"
-            )
+            max_tokens = max(1000, self.context_window // 3)
+        elif self.provider == "openai-compatible":
+            max_tokens = 1000
         else:
             max_tokens = 500
 
