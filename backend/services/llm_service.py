@@ -89,6 +89,7 @@ class ExtractionError(Enum):
     RATE_LIMIT_EXCEEDED = "rate_limit_exceeded"
     TOKEN_LIMIT_EXCEEDED = "token_limit_exceeded"
     NETWORK_ERROR = "network_error"
+    TIMEOUT = "timeout"
     API_ERROR = "api_error"
     INVALID_RESPONSE = "invalid_response"
     TEXT_TOO_SHORT = "text_too_short"
@@ -105,7 +106,7 @@ class LLMService:
 
         # Configure retry and timeout settings
         self.max_retries = self.config.get("LLM_MAX_RETRIES") or 3
-        self.request_timeout = self.config.get("LLM_REQUEST_TIMEOUT") or 60
+        self.request_timeout = self.config.get("LLM_REQUEST_TIMEOUT") or 180
         self.retry_delay = self.config.get("LLM_RETRY_DELAY") or 1
 
         # Text processing limits
@@ -234,8 +235,11 @@ class LLMService:
         except Exception as e:
             logger.debug(f"Could not load provider URL from database: {e}")
 
-        # Fallback to config or environment
-        provider_url = self.config.get("OLLAMA_URL", "http://localhost:11434")
+        # Fallback to config or environment based on provider type
+        if self.provider in ["openai-compatible", "lm-studio"]:
+            provider_url = self.config.get("OPENAI_COMPATIBLE_API_URL") or self.config.get("OLLAMA_URL", "http://localhost:11434")
+        else:
+            provider_url = self.config.get("OLLAMA_URL", "http://localhost:11434")
         logger.info(f"Using {self.provider} URL from config: {provider_url}")
         return provider_url
 
@@ -653,7 +657,7 @@ class LLMService:
 
         except httpx.TimeoutException:
             logger.error(f"Ollama request timeout after {self.request_timeout}s")
-            return None, ExtractionError.NETWORK_ERROR
+            return None, ExtractionError.TIMEOUT
         except httpx.NetworkError as e:
             logger.error(f"Ollama connection error: {e}")
             return None, ExtractionError.SERVICE_UNAVAILABLE
@@ -902,6 +906,7 @@ Rules for filename:
             ExtractionError.RATE_LIMIT_EXCEEDED: "API rate limit exceeded. Please try again in a few minutes.",
             ExtractionError.TOKEN_LIMIT_EXCEEDED: "Text too long for processing. Please try with a shorter document.",
             ExtractionError.NETWORK_ERROR: "Network connection error. Please check your internet connection and try again.",
+            ExtractionError.TIMEOUT: "AI processing timed out on this file. The PDF may be too large or complex. Try again or upload fewer files.",
             ExtractionError.API_ERROR: "API service error. Please try again later.",
             ExtractionError.INVALID_RESPONSE: "Unable to process the response from the AI service. Please try again.",
             ExtractionError.TEXT_TOO_SHORT: "Document text is too short for metadata extraction. Please ensure the PDF contains readable text.",

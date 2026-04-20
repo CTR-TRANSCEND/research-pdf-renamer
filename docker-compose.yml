@@ -25,6 +25,8 @@ services:
       - LLM_PROVIDER=${LLM_PROVIDER:-ollama}
       - LLM_MODEL=${LLM_MODEL:-llama3.2:3b}
       - OLLAMA_URL=${OLLAMA_URL:-http://ollama:11434}
+      - OPENAI_COMPATIBLE_API_URL=${OPENAI_COMPATIBLE_API_URL:-}
+      - OPENAI_COMPATIBLE_API_KEY=${OPENAI_COMPATIBLE_API_KEY:-}
       - ADMIN_CREATE=true
       - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@local}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-changeme123}

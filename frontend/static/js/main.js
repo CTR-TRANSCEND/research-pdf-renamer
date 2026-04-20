@@ -316,19 +316,28 @@ async function processFiles() {
         // Update individual file progress
         filesToProcess.forEach((item, index) => {
             const name = uploadMode === 'folder' ? item.path : item.name;
-            updateFileProgress(name, 'Processing...', 50);
+            updateFileProgress(name, 'Waiting...', 0);
         });
 
-        // Send request
+        // Send request with upload progress tracking
         const response = await axios.post('upload', formData, {
             headers: {
                 'Content-Type': 'multipart/form-data'
             },
+            timeout: 600000, // 10 minute timeout for large batches
             onUploadProgress: (progressEvent) => {
                 const percentCompleted = Math.round(
                     (progressEvent.loaded * 100) / progressEvent.total
                 );
-                updateModalProgress(percentCompleted, 'Uploading files...');
+                updateModalProgress(percentCompleted, `Uploading files... ${percentCompleted}%`);
+                if (percentCompleted >= 100) {
+                    // Upload done, now server is processing with LLM
+                    updateModalProgress(100, `Processing ${totalFiles} files with AI... This may take a few minutes.`);
+                    filesToProcess.forEach(item => {
+                        const name = uploadMode === 'folder' ? item.path : item.name;
+                        updateFileProgress(name, 'Processing...', 50);
+                    });
+                }
             }
         });
 
@@ -341,11 +350,8 @@ async function processFiles() {
 
         // Handle response - transition modal to complete state
         if (response.data.download_url) {
-            // Short delay then show results
             setTimeout(() => {
                 showResultsInModal(response.data, totalFiles);
-
-                // Start download
                 setTimeout(() => {
                     window.location.href = response.data.download_url;
                 }, 500);
@@ -354,7 +360,18 @@ async function processFiles() {
 
     } catch (error) {
         console.error('Processing error:', error);
-        const errorMsg = error.response?.data?.error || 'Processing failed';
+        let errorMsg = error.response?.data?.error || 'Processing failed';
+
+        // Provide user-friendly messages for common HTTP errors
+        if (error.response?.status === 413) {
+            errorMsg = 'Upload too large. Please reduce the number of files or use smaller PDFs.';
+        } else if (error.response?.status === 429) {
+            errorMsg = 'Rate limit exceeded. Please wait a moment and try again.';
+        } else if (error.response?.status === 504 || error.code === 'ECONNABORTED') {
+            errorMsg = 'Request timed out. Try uploading fewer files at a time.';
+        } else if (!error.response) {
+            errorMsg = 'Network error. Please check your connection and try again.';
+        }
 
         // Update failed files in modal
         if (error.response?.data?.details) {
@@ -364,7 +381,6 @@ async function processFiles() {
             });
         }
 
-        // Show error in modal
         showErrorInModal(errorMsg, error.response?.data?.details);
     } finally {
         // Reset button

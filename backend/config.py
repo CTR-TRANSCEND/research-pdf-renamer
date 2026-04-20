@@ -91,6 +91,8 @@ class Config:
     LLM_MODEL = os.environ.get("LLM_MODEL", "llama3.2")
     # Default Ollama URL (standard Ollama port is 11434, override with OLLAMA_URL env var)
     OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
+    # OpenAI-compatible API URL (LM Studio, vLLM, etc. via Tailscale or local network)
+    OPENAI_COMPATIBLE_API_URL = os.environ.get("OPENAI_COMPATIBLE_API_URL", "")
     API_KEY_FILE = os.environ.get("API_KEY_FILE", "APISetting.txt")
 
     # Database

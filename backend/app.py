@@ -173,12 +173,10 @@ def create_app(config_name=None):
                 '/api/auth/settings',  # GET - read-only
             )
 
-            # Exempt file upload/download if API-style auth (Bearer token) is used
+            # Exempt file upload/download - these are API endpoints that use
+            # JWT cookie or Bearer token auth, not form-based sessions
             if request.path.startswith('/api/upload') or request.path.startswith('/api/download'):
-                auth_header = request.headers.get('Authorization', '')
-                if auth_header.startswith('Bearer '):
-                    return  # API auth, CSRF not needed
-                # Cookie-only auth falls through to CSRF check below
+                return
 
             # Check if path is in exempt list
             if request.path in exempt_paths or request.path.startswith('/api/auth/login'):

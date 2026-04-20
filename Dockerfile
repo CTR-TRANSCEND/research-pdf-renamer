@@ -35,5 +35,5 @@ LABEL org.opencontainers.image.licenses="MIT"
 
 # Run with gunicorn
 CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "3", "--threads", "4", \
-     "--worker-class", "gthread", "--timeout", "300", "--access-logfile", "-", \
+     "--worker-class", "gthread", "--timeout", "600", "--access-logfile", "-", \
      "--error-logfile", "-", "backend.app:create_app('production')"]
