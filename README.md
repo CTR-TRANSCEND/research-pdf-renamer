@@ -219,7 +219,7 @@ OPENAI_COMPATIBLE_API_KEY=your-api-key
 OLLAMA_URL=http://localhost:8000
 ```
 
-> **Note:** If your LLM server runs on a private network (e.g., Tailscale), set `ALLOW_PRIVATE_IPS=true` in your `.env` file.
+> **Note:** If your LLM server runs on a private network, set `ALLOW_PRIVATE_IPS=true` in your `.env` file.
 
 ---
 

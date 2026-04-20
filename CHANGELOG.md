@@ -5,7 +5,7 @@ All notable changes to Research PDF File Renamer are documented here.
 ## [0.3.3] - 2026-04-20
 
 ### Added
-- **GPU LLM support via OpenAI-compatible API** -- New provider option for remote GPU servers (LM Studio, vLLM) via Tailscale or local network. Configurable from admin panel.
+- **GPU LLM support via OpenAI-compatible API** -- New provider option for remote GPU servers (LM Studio, vLLM) over local network. Configurable from admin panel.
 - **Polling-based real-time progress** -- Upload returns immediately with a job ID; frontend polls every 5 seconds for per-file status updates (Extracting → Analyzing → Renaming → Done).
 - **Per-file processing stages** -- Progress modal shows current stage for each file with percentage indicators.
 - **Elapsed time display** -- Results modal shows total processing time ("Completed in X.X seconds").
