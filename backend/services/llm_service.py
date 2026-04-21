@@ -499,9 +499,9 @@ class LLMService:
         # Calculate max_tokens — reasoning/thinking models need more headroom
         # (they use tokens for internal chain-of-thought before producing output)
         if self.provider == "lm-studio":
-            max_tokens = max(1000, self.context_window // 3)
+            max_tokens = max(2000, self.context_window // 3)
         elif self.provider == "openai-compatible":
-            max_tokens = 1000
+            max_tokens = 2000
         else:
             max_tokens = 500
 
@@ -544,6 +544,13 @@ class LLMService:
                 # chat/completions returns message.content, completions returns text
                 if "message" in choice:
                     response_text = choice["message"].get("content", "")
+                    # Some reasoning models (gemma-4, etc.) put content in reasoning_content
+                    # when they run out of tokens before producing final content
+                    if not response_text:
+                        reasoning = choice["message"].get("reasoning_content", "")
+                        if reasoning:
+                            response_text = reasoning
+                            logger.info("Using reasoning_content as response (model used thinking mode)")
                 else:
                     response_text = choice.get("text", "")
             else:

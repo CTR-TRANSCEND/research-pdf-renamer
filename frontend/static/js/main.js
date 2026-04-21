@@ -693,7 +693,7 @@ function showResultsInModal(data, totalSubmitted = 1) {
     // Always add a Close button at the bottom right
     html += `
         <div class="flex justify-end mt-4">
-            <button onclick="closeProcessingModal()" class="px-4 py-2 bg-gray-600 text-white text-sm font-medium rounded-lg hover:bg-gray-700 transition-colors">
+            <button id="auto-close-btn" onclick="closeProcessingModal()" class="px-4 py-2 bg-gray-600 text-white text-sm font-medium rounded-lg hover:bg-gray-700 transition-colors">
                 <i class="fas fa-times mr-1"></i> Close
             </button>
         </div>
@@ -707,11 +707,24 @@ function showResultsInModal(data, totalSubmitted = 1) {
     processingState.classList.add('hidden');
     completeState.classList.remove('hidden');
 
-    // Auto-close after 20 seconds if all files succeeded (no errors)
+    // Auto-close with countdown if all files succeeded (no errors)
     if (!data.errors || data.errors.length === 0) {
-        window._autoCloseTimeout = setTimeout(() => {
-            closeProcessingModal();
-        }, 20000);
+        let countdown = 10;
+        const closeBtn = document.getElementById('auto-close-btn');
+        if (closeBtn) {
+            closeBtn.textContent = `Close (${countdown}s)`;
+        }
+        window._autoCloseInterval = setInterval(() => {
+            countdown--;
+            if (closeBtn) {
+                closeBtn.textContent = `Close (${countdown}s)`;
+            }
+            if (countdown <= 0) {
+                clearInterval(window._autoCloseInterval);
+                window._autoCloseInterval = null;
+                closeProcessingModal();
+            }
+        }, 1000);
     }
 }
 
@@ -790,10 +803,10 @@ function closeProcessingModal() {
         clearInterval(_pollingInterval);
         _pollingInterval = null;
     }
-    // Clear auto-close timer
-    if (window._autoCloseTimeout) {
-        clearTimeout(window._autoCloseTimeout);
-        window._autoCloseTimeout = null;
+    // Clear auto-close countdown
+    if (window._autoCloseInterval) {
+        clearInterval(window._autoCloseInterval);
+        window._autoCloseInterval = null;
     }
 }
 

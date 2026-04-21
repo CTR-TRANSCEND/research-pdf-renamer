@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 # PERF-002: Module-level shared thread pool for file processing
 # Bounded by CPU count to prevent resource exhaustion
-MAX_WORKERS = min(os.cpu_count() or 4, 4)
+MAX_WORKERS = 2  # Keep low to avoid overwhelming LLM server with concurrent requests
 _file_processor_pool = ThreadPoolExecutor(max_workers=MAX_WORKERS, thread_name_prefix="file_processor")
 
 # Initialize services (lazy initialization to avoid config issues)
@@ -334,7 +334,7 @@ def _process_files_background(app, job_id, saved_files, llm_svc, file_svc, pdf_p
         for i, sf in enumerate(saved_files):
             future_to_info[executor.submit(process_single_file, sf)] = sf
             if i < len(saved_files) - 1:
-                time.sleep(0.5)
+                time.sleep(1.0)
 
         for future in as_completed(future_to_info):
             file_info = future_to_info[future]

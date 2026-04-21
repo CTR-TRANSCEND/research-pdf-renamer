@@ -1049,9 +1049,14 @@
                         ollamaUrlInput.value = providerInfo.url;
                     }
 
-                    // Disable model dropdown until models are fetched
-                    modelSelect.disabled = true;
-                    modelSelect.innerHTML = '<option value="">Click "Fetch Models" First</option>';
+                    // Show current model as selected, even before fetch
+                    modelSelect.disabled = false;
+                    if (settings.current_model && selectedProvider === settings.current_provider) {
+                        modelSelect.innerHTML = `<option value="${settings.current_model}" selected>${settings.current_model}</option><option value="">— Click "Fetch Models" for full list —</option>`;
+                    } else {
+                        modelSelect.disabled = true;
+                        modelSelect.innerHTML = '<option value="">Click "Fetch Models" First</option>';
+                    }
 
                     // Update help text based on provider type
                     if (selectedProvider === 'ollama') {
