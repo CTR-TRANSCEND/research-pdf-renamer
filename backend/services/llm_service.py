@@ -710,7 +710,10 @@ class LLMService:
 Extract the following metadata from this research paper text and respond with ONLY a JSON object:
 
 1. Author: Extract the primary author's last name (most important for filename)
-2. Year: Publication year (look for 4-digit years, usually recent)
+2. Year: The ORIGINAL publication year of the paper in the journal (NOT the PMC availability year).
+   - For PMC author manuscripts, look for "Published in final edited form as: [Journal]. [YEAR]" — use that YEAR.
+   - IGNORE "available in PMC [YEAR]" — that is only when the PMC copy was posted.
+   - Example: Text says "available in PMC 2024" and "Published in final edited form as: Cell. 2023" → year is 2023.
 3. Journal: Extract journal name (e.g., Nature, Science, bioRxiv, Cell, NEJM, etc.)
 4. Title: The main title of the paper
 5. Keywords: Extract 3-5 key words that represent the core research
