@@ -2,6 +2,35 @@
 
 All notable changes to Research PDF File Renamer are documented here.
 
+## [0.3.5] - 2026-04-27
+
+### Security & Reliability
+
+#### Critical
+- **XSS via unescaped filenames** -- `escapeHtml()` now wraps every server-controlled string interpolated into `innerHTML` (results modal, progress items, file list, error messages, toasts). A maliciously named PDF can no longer execute JS in the page.
+
+#### High
+- **50MB upload size limit** enforced via Flask `MAX_CONTENT_LENGTH`; `validate_file()` is now actually called before saving (was unreachable dead code).
+- **CSRF exempt path matching tightened** -- exact-match only, no `startswith()` bypass surface. `/api/auth/change-password` is no longer exempt.
+- **Polling timeout** -- progress polling stops after 6 consecutive failures, 5 minutes stuck-state, or job-id 404.
+- **Auto-close countdown cancels on user interaction** -- mousemove/keydown/scroll/touch in the results modal stops the timer so users can read or copy filenames.
+- **Inactivity tracker initializes for modal-login users** -- previously users who logged in via the page-modal never got the auto-logout protection.
+- **Modal accessibility** -- Escape closes, Tab focus is trapped, focus is restored to the trigger on close. Applied to all 6 dialogs via `MutationObserver` on `role="dialog"` elements.
+- **Download via hidden `<a download>`** -- replaces `window.location.href` so a failing/HTML response no longer navigates the page away from the results modal.
+
+#### Medium
+- **PDF extraction hard timeout (30s)** -- a corrupt or malicious PDF can no longer hang a worker. Fallback chain reduced to pymupdf only; pdfplumber and pypdf removed from `requirements.txt`.
+- **Atomic `.env` writes** in `save_api_key` (write to `.env.tmp`, fsync, `os.replace`) — no more truncation risk if the process dies mid-write.
+- **Stop logging auto-admin password to stdout** -- written to `instance/.admin_initial_password` (mode 0600) and only the file path is logged.
+- **Single-pass hash+save** in `FileService` (was double I/O); `threading.Lock` around the duplicate-detection cache.
+- **Background-thread DB writes** -- `record_usage` now uses `logger.exception()` for full tracebacks and guards `request.remote_addr` behind `has_request_context()`.
+- **Dockerfile: multi-stage build + non-root user** (`useradd -m -u 1000 app`). Final image ~33MB smaller (273MB vs 306MB).
+- **Filename-based DOM ID collisions** -- replaced with stable index-based IDs (`progress-0`, `progress-1`, ...) and `dataset.filename` for lookup.
+- **File-size warnings before upload** -- reject single file > 50MB, warn at total > 100MB.
+- **Tailwind `max-h-[80vh]`** (v3 syntax silently ignored by v2) replaced with inline styles across templates and dynamic modals.
+- **Toast a11y** -- `role="status" aria-live="polite"` on `#toast-container` so screen readers announce notifications.
+- **Structured logging wired** -- `setup_structured_logging()` runs in production; `g.request_id` is now correlated onto every log record.
+
 ## [0.3.4] - 2026-04-20
 
 ### Fixed
