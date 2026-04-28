@@ -161,6 +161,12 @@ def upload_files():
         for i, file in enumerate(files):
             path = paths[i] if paths and i < len(paths) else file.filename
             try:
+                # Validate file size, magic bytes, and extension BEFORE writing to disk
+                is_valid, validation_msg = file_svc.validate_file(file)
+                if not is_valid:
+                    save_errors.append(f"{path}: {validation_msg}")
+                    continue
+
                 filepath, unique_filename = file_svc.save_uploaded_file(file)
                 saved_files.append({
                     "index": i,

@@ -27,8 +27,8 @@ class FileService:
         self.upload_folder = self.config.get("UPLOAD_FOLDER") or "uploads"
         self.temp_folder = self.config.get("TEMP_FOLDER") or "temp"
         self.max_content_length = (
-            self.config.get("MAX_CONTENT_LENGTH") or 100 * 1024 * 1024
-        )  # 100MB
+            self.config.get("MAX_CONTENT_LENGTH") or 50 * 1024 * 1024
+        )  # 50MB per file
         self.chunk_size = 64 * 1024  # 64KB chunks for streaming
 
         # Cache for file hashes to detect duplicates

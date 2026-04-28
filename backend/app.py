@@ -162,24 +162,31 @@ def create_app(config_name=None):
     # Custom CSRFProtect that selectively enforces CSRF based on endpoint
     class SelectiveCSRFProtect(CSRFProtect):
         def protect(self):
-            # Exempt login/register/logout - they use JWT cookies and session auth
-            exempt_paths = (
+            # Exempt entry-point auth endpoints (no session yet to validate against)
+            exempt_paths = frozenset({
                 '/api/auth/login',
                 '/api/auth/register',
                 '/api/auth/logout',
                 '/api/auth/refresh-token',
-                '/api/auth/change-password',  # JWT-authenticated JSON API
-                '/api/auth/me',  # GET - read-only
-                '/api/auth/settings',  # GET - read-only
-            )
+                '/api/auth/me',          # GET - read-only
+                '/api/auth/settings',    # GET - read-only
+            })
 
-            # Exempt file upload/download - these are API endpoints that use
-            # JWT cookie or Bearer token auth, not form-based sessions
-            if request.path.startswith('/api/upload') or request.path.startswith('/api/download'):
+            # Exempt the upload + download endpoints exactly (no prefix bypass).
+            # /api/upload accepts multipart from authenticated UI; /api/download
+            # delivers files via signed session paths. These are JSON/file APIs,
+            # not form posts, and rely on JWT cookie auth + SameSite=Lax.
+            upload_exact = frozenset({
+                '/api/upload',
+            })
+
+            path = request.path
+
+            # Exact-match exemptions only — no startswith() bypass surface
+            if path in exempt_paths or path in upload_exact:
                 return
-
-            # Check if path is in exempt list
-            if request.path in exempt_paths or request.path.startswith('/api/auth/login'):
+            # Download URLs include a session ID + filename suffix, so allow that prefix
+            if path.startswith('/api/download/') or path.startswith('/api/upload/progress/'):
                 return
 
             # For state-changing endpoints (POST/PUT/DELETE), enforce CSRF

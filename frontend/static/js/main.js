@@ -17,10 +17,106 @@ function escapeHtml(str) {
         .replace(/'/g, '&#039;');
 }
 
+// Trigger a file download without navigating the page.
+// Using `window.location.href = url` would navigate (clobbering modal state)
+// if the response is not actually a download (e.g. server returns HTML/JSON
+// error). A hidden <a download> click stays on the current page in modern
+// browsers; if the server returns an error body, the browser silently does
+// nothing instead of navigating away.
+function triggerDownload(url) {
+    if (!url) return;
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = '';  // Hint browser to download rather than navigate
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => a.remove(), 0);
+}
+
+// ---------------------------------------------------------------------------
+// Modal accessibility helper: Escape-to-close + focus return + simple focus trap.
+// Applied to any element with role="dialog". Activates when the dialog becomes
+// visible (i.e. its `hidden` class is removed).
+// ---------------------------------------------------------------------------
+const _modalState = new WeakMap(); // modalEl -> { previousFocus, keyHandler }
+
+function _focusableInside(el) {
+    return Array.from(el.querySelectorAll(
+        'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+    )).filter(e => e.offsetParent !== null);
+}
+
+function _activateModal(modal) {
+    if (_modalState.has(modal)) return; // already active
+    const previousFocus = document.activeElement;
+    const keyHandler = (e) => {
+        if (e.key === 'Escape') {
+            // Find a close button inside the modal and click it; fall back to hiding.
+            const closeBtn = modal.querySelector('[data-modal-close], [aria-label="Close"]');
+            if (closeBtn) {
+                e.preventDefault();
+                closeBtn.click();
+            } else {
+                e.preventDefault();
+                modal.classList.add('hidden');
+                _deactivateModal(modal);
+            }
+        } else if (e.key === 'Tab') {
+            const focusable = _focusableInside(modal);
+            if (focusable.length === 0) return;
+            const first = focusable[0];
+            const last = focusable[focusable.length - 1];
+            if (e.shiftKey && document.activeElement === first) {
+                e.preventDefault();
+                last.focus();
+            } else if (!e.shiftKey && document.activeElement === last) {
+                e.preventDefault();
+                first.focus();
+            }
+        }
+    };
+    modal.addEventListener('keydown', keyHandler);
+    _modalState.set(modal, { previousFocus, keyHandler });
+    // Move focus into the modal
+    const focusable = _focusableInside(modal);
+    if (focusable.length > 0) focusable[0].focus();
+}
+
+function _deactivateModal(modal) {
+    const state = _modalState.get(modal);
+    if (!state) return;
+    modal.removeEventListener('keydown', state.keyHandler);
+    _modalState.delete(modal);
+    if (state.previousFocus && typeof state.previousFocus.focus === 'function') {
+        state.previousFocus.focus();
+    }
+}
+
+function setupModalAccessibility() {
+    // Watch every dialog for visibility changes (the app toggles a "hidden" class)
+    const dialogs = document.querySelectorAll('[role="dialog"]');
+    dialogs.forEach(dialog => {
+        const observer = new MutationObserver(() => {
+            if (dialog.classList.contains('hidden')) {
+                _deactivateModal(dialog);
+            } else {
+                _activateModal(dialog);
+            }
+        });
+        observer.observe(dialog, { attributes: true, attributeFilter: ['class'] });
+        // Initial state
+        if (!dialog.classList.contains('hidden')) {
+            _activateModal(dialog);
+        }
+    });
+}
+
 // Initialize app
 document.addEventListener('DOMContentLoaded', function() {
     initializeApp();
     setupEventListeners();
+    setupModalAccessibility();
     checkAuthStatus();
     loadUserLimits();
 });
@@ -252,8 +348,8 @@ function displaySelectedFiles() {
             <div class="flex items-center">
                 <i class="fas ${icon} mr-3"></i>
                 <div>
-                    <p class="font-medium text-gray-900">${fileName}</p>
-                    <p class="text-sm text-gray-500">${formatFileSize(fileSize)}</p>
+                    <p class="font-medium text-gray-900">${escapeHtml(fileName)}</p>
+                    <p class="text-sm text-gray-500">${escapeHtml(formatFileSize(fileSize))}</p>
                 </div>
             </div>
             <button onclick="removeFile(${index})" class="text-red-600 hover:text-red-800">
@@ -399,10 +495,36 @@ function startProgressPolling(jobId, filesToProcess, totalFiles) {
         _pollingInterval = null;
     }
 
+    // Track failure / stuck state
+    let consecutiveFailures = 0;
+    const MAX_CONSECUTIVE_FAILURES = 6;  // ~30s of failed polls
+    let lastCompletedCount = -1;
+    let lastProgressTime = Date.now();
+    const STUCK_TIMEOUT_MS = 5 * 60 * 1000;  // 5 minutes with no progress
+
+    const stopPolling = (reason) => {
+        if (_pollingInterval) {
+            clearInterval(_pollingInterval);
+            _pollingInterval = null;
+        }
+        showErrorInModal(reason, null);
+        resetProcessButton();
+    };
+
     _pollingInterval = setInterval(async () => {
         try {
             const response = await axios.get(`upload/progress/${jobId}`, { timeout: 10000 });
+            consecutiveFailures = 0;
             const progress = response.data;
+
+            // Stuck detection: if completed count hasn't moved in 5 minutes, assume backend died
+            if (progress.completed !== lastCompletedCount) {
+                lastCompletedCount = progress.completed;
+                lastProgressTime = Date.now();
+            } else if (progress.status === 'processing' && Date.now() - lastProgressTime > STUCK_TIMEOUT_MS) {
+                stopPolling('Processing appears stuck (no progress for 5 minutes). The server may have crashed. Please try again.');
+                return;
+            }
 
             // Update overall progress
             const completedCount = progress.completed;
@@ -481,7 +603,7 @@ function startProgressPolling(jobId, filesToProcess, totalFiles) {
                     showResultsInModal(resultData, totalFiles);
                     if (resultData.download_url) {
                         setTimeout(() => {
-                            window.location.href = resultData.download_url;
+                            triggerDownload(resultData.download_url);
                         }, 500);
                     }
                 }, 500);
@@ -491,7 +613,18 @@ function startProgressPolling(jobId, filesToProcess, totalFiles) {
 
         } catch (pollError) {
             console.error('Polling error:', pollError);
-            // Don't stop polling on transient errors, just log
+            consecutiveFailures++;
+            // If the job ID is gone (404), the backend forgot it — give up
+            if (pollError.response?.status === 404) {
+                stopPolling('Job expired or not found. The processing job is no longer available. Please try again.');
+                return;
+            }
+            // After several consecutive failures, give up
+            if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+                stopPolling('Lost connection to server. Please refresh the page and try again.');
+                return;
+            }
+            // Otherwise keep polling — transient network blip
         }
     }, 5000); // Poll every 5 seconds
 }
@@ -535,7 +668,7 @@ function handleSynchronousResponse(data, filesToProcess, totalFiles) {
         setTimeout(() => {
             showResultsInModal(data, totalFiles);
             setTimeout(() => {
-                window.location.href = data.download_url;
+                triggerDownload(data.download_url);
             }, 500);
         }, 800);
     } else if (data.errors) {
@@ -635,8 +768,8 @@ function showResultsInModal(data, totalSubmitted = 1) {
             <div class="bg-green-50 p-4 rounded-lg">
                 <h3 class="font-semibold text-green-800 mb-2">File Renamed Successfully</h3>
                 <p class="text-sm text-gray-700">
-                    <strong>Original:</strong> ${data.file.original_name}<br>
-                    <strong>New Name:</strong> ${data.file.new_name}
+                    <strong>Original:</strong> ${escapeHtml(data.file.original_name)}<br>
+                    <strong>New Name:</strong> ${escapeHtml(data.file.new_name)}
                 </p>
             </div>
         `;
@@ -647,8 +780,8 @@ function showResultsInModal(data, totalSubmitted = 1) {
         data.files.forEach(file => {
             html += `
                 <div class="py-1.5 px-2">
-                    <p class="text-xs text-gray-500 truncate">${file.original_name}</p>
-                    <p class="text-sm text-gray-900 truncate">&rarr; ${file.new_name}</p>
+                    <p class="text-xs text-gray-500 truncate">${escapeHtml(file.original_name)}</p>
+                    <p class="text-sm text-gray-900 truncate">&rarr; ${escapeHtml(file.new_name)}</p>
                 </div>
             `;
         });
@@ -666,7 +799,7 @@ function showResultsInModal(data, totalSubmitted = 1) {
             <div class="bg-yellow-50 p-4 rounded-lg">
                 <h3 class="font-semibold text-yellow-800 mb-2">Errors (${data.errors.length}):</h3>
                 <ul class="text-sm text-yellow-700 space-y-1">
-                    ${data.errors.map(error => `<li>&bull; ${error}</li>`).join('')}
+                    ${data.errors.map(error => `<li>&bull; ${escapeHtml(error)}</li>`).join('')}
                 </ul>
                 <button onclick="retryFailedFiles()" class="mt-3 px-4 py-2 bg-yellow-600 text-white text-sm font-medium rounded-lg hover:bg-yellow-700 transition-colors">
                     <i class="fas fa-redo mr-1"></i> Retry Failed Files
@@ -684,7 +817,7 @@ function showResultsInModal(data, totalSubmitted = 1) {
                 <p class="text-sm text-blue-800">
                     <i class="fas fa-download mr-1"></i>
                     Your download should start automatically. If not,
-                    <a href="${data.download_url}" class="underline font-semibold">click here</a>.
+                    <a href="${escapeHtml(data.download_url)}" class="underline font-semibold">click here</a>.
                 </p>
             </div>
         `;
@@ -707,21 +840,55 @@ function showResultsInModal(data, totalSubmitted = 1) {
     processingState.classList.add('hidden');
     completeState.classList.remove('hidden');
 
-    // Auto-close with countdown if all files succeeded (no errors)
+    // Auto-close with countdown if all files succeeded (no errors).
+    // Cancel the countdown when the user interacts with the modal so they
+    // can read/copy the renamed filenames without time pressure.
     if (!data.errors || data.errors.length === 0) {
         let countdown = 10;
         const closeBtn = document.getElementById('auto-close-btn');
+        const modal = document.getElementById('processing-modal');
         if (closeBtn) {
             closeBtn.textContent = `Close (${countdown}s)`;
         }
+
+        const cancelCountdown = () => {
+            if (window._autoCloseInterval) {
+                clearInterval(window._autoCloseInterval);
+                window._autoCloseInterval = null;
+            }
+            if (closeBtn) {
+                closeBtn.innerHTML = '<i class="fas fa-times mr-1"></i> Close';
+            }
+            // Remove all interaction listeners
+            if (modal && window._autoCloseListeners) {
+                window._autoCloseListeners.forEach(({type, fn}) => {
+                    modal.removeEventListener(type, fn, true);
+                });
+                window._autoCloseListeners = null;
+            }
+        };
+
+        // Attach interaction listeners that cancel the countdown
+        if (modal) {
+            window._autoCloseListeners = [
+                {type: 'mousemove', fn: cancelCountdown},
+                {type: 'mousedown', fn: cancelCountdown},
+                {type: 'keydown', fn: cancelCountdown},
+                {type: 'wheel', fn: cancelCountdown},
+                {type: 'touchstart', fn: cancelCountdown},
+            ];
+            window._autoCloseListeners.forEach(({type, fn}) => {
+                modal.addEventListener(type, fn, {capture: true, once: true});
+            });
+        }
+
         window._autoCloseInterval = setInterval(() => {
             countdown--;
             if (closeBtn) {
                 closeBtn.textContent = `Close (${countdown}s)`;
             }
             if (countdown <= 0) {
-                clearInterval(window._autoCloseInterval);
-                window._autoCloseInterval = null;
+                cancelCountdown();
                 closeProcessingModal();
             }
         }, 1000);
@@ -749,7 +916,7 @@ function showErrorInModal(errorMsg, details) {
     let html = `
         <div class="bg-red-50 p-4 rounded-lg">
             <h3 class="font-semibold text-red-800 mb-2">Error</h3>
-            <p class="text-sm text-red-700">${errorMsg}</p>
+            <p class="text-sm text-red-700">${escapeHtml(errorMsg)}</p>
         </div>
     `;
 
@@ -758,7 +925,7 @@ function showErrorInModal(errorMsg, details) {
             <div class="bg-yellow-50 p-4 rounded-lg mt-4">
                 <h3 class="font-semibold text-yellow-800 mb-2">Details:</h3>
                 <ul class="text-sm text-yellow-700 space-y-1">
-                    ${details.map(d => `<li>&bull; ${d}</li>`).join('')}
+                    ${details.map(d => `<li>&bull; ${escapeHtml(d)}</li>`).join('')}
                 </ul>
             </div>
         `;
@@ -795,7 +962,8 @@ function retryFailedFiles() {
 
 // Close processing modal
 function closeProcessingModal() {
-    document.getElementById('processing-modal').classList.add('hidden');
+    const modal = document.getElementById('processing-modal');
+    modal.classList.add('hidden');
     // Show summary stats again for next time
     document.getElementById('summary-stats').classList.remove('hidden');
     // Stop any active polling
@@ -808,6 +976,13 @@ function closeProcessingModal() {
         clearInterval(window._autoCloseInterval);
         window._autoCloseInterval = null;
     }
+    // Remove auto-close interaction listeners
+    if (window._autoCloseListeners) {
+        window._autoCloseListeners.forEach(({type, fn}) => {
+            modal.removeEventListener(type, fn, true);
+        });
+        window._autoCloseListeners = null;
+    }
 }
 
 // Create progress item for file
@@ -819,7 +994,7 @@ function createProgressItem(fileName) {
         <div class="flex items-center flex-1">
             <i class="fas fa-file-pdf text-red-600 mr-3 file-icon"></i>
             <div class="flex-1">
-                <p class="font-medium text-gray-900 text-sm">${fileName}</p>
+                <p class="font-medium text-gray-900 text-sm">${escapeHtml(fileName)}</p>
                 <p class="text-xs text-gray-500 status-text">Waiting...</p>
             </div>
         </div>
@@ -905,6 +1080,11 @@ async function checkAuthStatus() {
         const response = await axios.get('auth/me');
         currentUser = response.data.user;
         updateAuthUI(currentUser);
+        // (Re)initialize inactivity tracking now that we know the user is authenticated.
+        // initializeInactivityTracking() is idempotent (resetInactivityTimer clears old timers).
+        if (typeof initializeInactivityTracking === 'function') {
+            initializeInactivityTracking();
+        }
     } catch (error) {
         // Not authenticated or session expired
         currentUser = null;
@@ -1324,7 +1504,7 @@ function showToast(message, type = 'info') {
     toast.innerHTML = `
         <div class="flex items-center">
             <i class="fas fa-${type === 'error' ? 'exclamation-circle' : 'info-circle'} mr-2"></i>
-            <span>${message}</span>
+            <span>${escapeHtml(message)}</span>
         </div>
     `;
 
