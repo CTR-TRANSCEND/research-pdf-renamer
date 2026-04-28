@@ -50,8 +50,12 @@ class FileService:
 
         Performs a single pass over the upload stream: each chunk is written to disk
         and incrementally fed to a SHA-256 hasher. After writing completes, the digest
-        is used to consult the duplicate cache. If a cached duplicate exists on disk,
-        the freshly written file is removed and the cached path is returned instead.
+        is compared against the duplicate-detection cache for informational logging.
+
+        The cache is informational only — concurrent uploads of the same file each
+        receive their own private temp path to prevent race-condition data loss.
+        (If two threads shared a path, one thread's move_to_downloads could remove
+        the file before the other thread reads it, causing an "Invalid PDF" error.)
 
         Returns (filepath, unique_filename).
         """
@@ -83,23 +87,21 @@ class FileService:
 
         file_hash = hash_sha256.hexdigest()
 
-        # Check cache for duplicate AFTER saving (we only got the hash from one pass)
+        # Informational duplicate check — do NOT delete the freshly written file or
+        # return a cached path.  Each caller owns its own temp file; sharing paths
+        # across threads would allow one thread's move_to_downloads to silently
+        # remove the file from under another thread.
         with self._cache_lock:
             cached_path = self._file_hash_cache.get(file_hash)
 
-        if cached_path and os.path.exists(cached_path) and cached_path != filepath:
-            # We re-saved a duplicate; clean up the just-written file and return the cached one.
+        if cached_path and cached_path != filepath:
             logger.info(
-                f"Duplicate upload detected (hash={file_hash[:12]}...); "
-                f"removing freshly written copy {filepath} in favor of cached {cached_path}"
+                f"Duplicate upload detected (hash {file_hash[:8]}); "
+                f"keeping independent copy at {filepath}"
             )
-            try:
-                os.remove(filepath)
-            except OSError as e:
-                logger.warning(f"Failed to remove duplicate upload {filepath}: {e}")
-            return cached_path, os.path.basename(cached_path)
 
-        # Update cache (locked for thread-safe LRU eviction + write)
+        # Update cache with the latest path for this hash (locked for thread-safe LRU eviction).
+        # Storing the freshest path keeps cache entries from pointing at already-deleted files.
         self._update_cache(file_hash, filepath)
 
         return filepath, unique_filename

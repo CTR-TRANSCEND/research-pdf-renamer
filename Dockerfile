@@ -24,8 +24,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     HOST=0.0.0.0 \
     PORT=5000
 
-# Create non-root user up front so we can chown during COPY
-RUN useradd -m -u 1000 app
+# Create non-root user up front so we can chown during COPY.
+# Install gosu so the entrypoint can drop from root to the app user.
+RUN useradd -m -u 1000 app \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends gosu \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
@@ -41,7 +45,10 @@ COPY --chown=app:app run.py .
 RUN mkdir -p instance uploads/downloads temp \
     && chown -R app:app /app
 
-USER app
+# Copy the entrypoint shim. It runs as root, fixes volume ownership when
+# upgrading from v0.3.4 (root-owned files), then drops to the app user via gosu.
+COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
 
 EXPOSE 5000
 
@@ -52,6 +59,8 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
 LABEL org.opencontainers.image.source="https://github.com/CTR-TRANSCEND/research-pdf-renamer"
 LABEL org.opencontainers.image.description="Research PDF File Renamer - AI-powered PDF renaming tool"
 LABEL org.opencontainers.image.licenses="MIT"
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 
 # Run with gunicorn
 CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "1", "--threads", "12", \

@@ -1,6 +1,7 @@
 import re
 import hashlib
 import os
+import threading
 from typing import Tuple, Optional, Dict, Any
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 import logging
@@ -18,6 +19,22 @@ logger = logging.getLogger(__name__)
 # not be able to hang a worker beyond this.
 EXTRACTION_TIMEOUT_SECONDS = 30
 
+# Module-level, long-lived executor — intentionally NOT used as a context
+# manager.  When a pymupdf call hangs past EXTRACTION_TIMEOUT_SECONDS the
+# gunicorn request thread returns immediately (future.result() raises
+# TimeoutError) while the zombie worker thread stays parked inside the
+# executor.  Python threads cannot be killed, so the slot is permanently
+# consumed by each hung call, but with max_workers=4 the application can
+# absorb 4 simultaneous hangs before new submissions queue rather than
+# returning instantly.  In practice, corrupt PDFs are rare and gunicorn
+# processes recycle periodically, which clears the leaked threads.
+# This is strictly better than the previous `with ThreadPoolExecutor(…)`
+# pattern, whose __exit__ called shutdown(wait=True) — blocking the request
+# thread for as long as pymupdf chose to hang.
+_extraction_executor = ThreadPoolExecutor(
+    max_workers=4, thread_name_prefix="pdf_extract"
+)
+
 
 class PDFProcessor:
     def __init__(self):
@@ -25,8 +42,11 @@ class PDFProcessor:
         self.keywords_title = ['title', 'research paper', 'article']
         self.min_text_length = 100
 
-        # Cache for processed PDFs to avoid re-processing
-        self._cache = {}
+        # Cache for processed PDFs to avoid re-processing.
+        # _cache_lock serialises all reads and writes; gunicorn runs multiple
+        # threads per worker so unsynchronised dict access is a data race.
+        self._cache: Dict[str, Dict[str, Any]] = {}
+        self._cache_lock = threading.Lock()
         self._cache_max_size = 50
 
         # Optimization settings
@@ -41,27 +61,31 @@ class PDFProcessor:
         Uses pymupdf only. Wrapped in a 30-second hard timeout so a
         malicious or corrupt PDF cannot hang the worker.
         """
-        # Check cache first
+        # Check cache first (lock because gunicorn threads share this object).
         file_hash = self._get_file_hash(pdf_path)
-        if file_hash in self._cache:
-            logger.debug(f"Using cached result for {os.path.basename(pdf_path)}")
-            cached_result = self._cache[file_hash]
-            return cached_result['text'], cached_result['pages']
+        with self._cache_lock:
+            if file_hash in self._cache:
+                logger.debug(f"Using cached result for {os.path.basename(pdf_path)}")
+                cached_result = self._cache[file_hash]
+                return cached_result['text'], cached_result['pages']
 
-        # Run extraction in a worker thread with a hard timeout.
+        # Submit to the module-level long-lived executor (NOT a context manager).
+        # future.result(timeout=…) raises FuturesTimeoutError after 30 s and
+        # returns immediately to the caller.  The worker thread may keep running
+        # inside _extraction_executor — it cannot be killed — but it never
+        # blocks THIS thread.  See module-level comment on _extraction_executor.
+        future = _extraction_executor.submit(self._extract_with_pymupdf_full, pdf_path)
         try:
-            with ThreadPoolExecutor(max_workers=1) as executor:
-                future = executor.submit(self._extract_with_pymupdf_full, pdf_path)
-                try:
-                    text_content, pages_processed = future.result(
-                        timeout=EXTRACTION_TIMEOUT_SECONDS
-                    )
-                except FuturesTimeoutError:
-                    logger.error(
-                        f"PDF extraction timed out after {EXTRACTION_TIMEOUT_SECONDS}s "
-                        f"for {os.path.basename(pdf_path)}"
-                    )
-                    return "", 0
+            text_content, pages_processed = future.result(
+                timeout=EXTRACTION_TIMEOUT_SECONDS
+            )
+        except FuturesTimeoutError:
+            future.cancel()  # no-op if already running; cleans up if still queued
+            logger.error(
+                f"PDF extraction timed out after {EXTRACTION_TIMEOUT_SECONDS}s "
+                f"for {os.path.basename(pdf_path)}"
+            )
+            return "", 0
         except Exception as e:
             logger.error(
                 f"Error processing PDF {os.path.basename(pdf_path)}: {e}"
@@ -241,20 +265,22 @@ class PDFProcessor:
             return None
 
     def _update_cache(self, file_hash: str, text: str, pages: int):
-        """Update PDF processing cache with LRU eviction."""
-        # Remove oldest entry if cache is full
-        if len(self._cache) >= self._cache_max_size:
-            oldest_key = next(iter(self._cache))
-            del self._cache[oldest_key]
+        """Update PDF processing cache with LRU eviction (thread-safe)."""
+        with self._cache_lock:
+            # Remove oldest entry if cache is full
+            if len(self._cache) >= self._cache_max_size:
+                oldest_key = next(iter(self._cache))
+                del self._cache[oldest_key]
 
-        self._cache[file_hash] = {
-            'text': text,
-            'pages': pages
-        }
+            self._cache[file_hash] = {
+                'text': text,
+                'pages': pages
+            }
 
     def clear_cache(self):
-        """Clear the PDF processing cache."""
-        self._cache.clear()
+        """Clear the PDF processing cache (thread-safe)."""
+        with self._cache_lock:
+            self._cache.clear()
 
     def validate_pdf(self, pdf_path: str) -> bool:
         """Validate if the file is a proper PDF with optimized checks."""
