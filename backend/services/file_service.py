@@ -6,6 +6,7 @@ import hashlib
 import io
 import logging
 import threading
+import time
 from datetime import datetime, timedelta
 from werkzeug.utils import secure_filename
 from typing import List, Optional, Tuple
@@ -50,6 +51,84 @@ def get_cleanup_stats() -> dict:
     }
 
 
+# ── Periodic file sweeper ──────────────────────────────────────────────────
+# Daemon thread that deletes stale files from temp/ and uploads/downloads/
+# every _SWEEP_INTERVAL_SECONDS. This is the backstop for files that were
+# skipped when the cleanup semaphore was exhausted.
+_SWEEP_INTERVAL_SECONDS = 300    # run every 5 minutes
+_SWEEP_MAX_AGE_SECONDS = 1800    # delete files older than 30 minutes
+
+_sweep_upload_folder = "uploads"
+_sweep_temp_folder = "temp"
+_sweeper_started = False
+_sweeper_lock = threading.Lock()
+
+
+def _sweep_old_files() -> None:
+    """Delete stale files from temp/ and uploads/downloads/ (one level deep)."""
+    cutoff = time.time() - _SWEEP_MAX_AGE_SECONDS
+    targets = [
+        _sweep_temp_folder,
+        os.path.join(_sweep_upload_folder, "downloads"),
+    ]
+    for folder in targets:
+        if not os.path.isdir(folder):
+            continue
+        try:
+            for entry in os.scandir(folder):
+                if entry.is_file(follow_symlinks=False):
+                    try:
+                        if entry.stat(follow_symlinks=False).st_mtime < cutoff:
+                            os.remove(entry.path)
+                            logger.debug("file sweeper: removed stale file %s", entry.path)
+                    except OSError:
+                        pass
+                elif entry.is_dir(follow_symlinks=False):
+                    try:
+                        for sub in os.scandir(entry.path):
+                            if sub.is_file(follow_symlinks=False):
+                                try:
+                                    if sub.stat(follow_symlinks=False).st_mtime < cutoff:
+                                        os.remove(sub.path)
+                                        logger.debug(
+                                            "file sweeper: removed stale file %s", sub.path
+                                        )
+                                except OSError:
+                                    pass
+                    except OSError:
+                        pass
+        except OSError as e:
+            logger.warning("file sweeper: cannot scan %s: %s", folder, e)
+
+
+def _sweeper_loop() -> None:
+    """Daemon loop: sweep stale files every _SWEEP_INTERVAL_SECONDS."""
+    while True:
+        time.sleep(_SWEEP_INTERVAL_SECONDS)
+        try:
+            _sweep_old_files()
+        except Exception:
+            logger.exception("file sweeper: unexpected error during sweep")
+
+
+def _start_sweeper(upload_folder: str, temp_folder: str) -> None:
+    """Start the background sweeper daemon thread exactly once per process."""
+    global _sweeper_started, _sweep_upload_folder, _sweep_temp_folder
+    if _sweeper_started:
+        return
+    with _sweeper_lock:
+        if _sweeper_started:
+            return
+        _sweep_upload_folder = upload_folder
+        _sweep_temp_folder = temp_folder
+        t = threading.Thread(
+            target=_sweeper_loop, name="file_sweeper", daemon=True
+        )
+        t.start()
+        _sweeper_started = True
+        logger.debug("file sweeper: periodic daemon thread started")
+
+
 class FileService:
     # LOG-003: Class-level thread pool for cleanup tasks
     # PERF-002 FIX: Add bounded queue to prevent unbounded task accumulation
@@ -77,6 +156,9 @@ class FileService:
         os.makedirs(self.upload_folder, exist_ok=True)
         os.makedirs(self.temp_folder, exist_ok=True)
         os.makedirs(os.path.join(self.upload_folder, "downloads"), exist_ok=True)
+
+        # Start the module-level periodic sweeper on first instantiation.
+        _start_sweeper(self.upload_folder, self.temp_folder)
 
     def save_uploaded_file(
         self, file, filename: Optional[str] = None
@@ -350,7 +432,7 @@ class FileService:
         # If 50 tasks are already pending, this will block until a slot is available
         acquired = self._cleanup_semaphore.acquire(blocking=False)
         if not acquired:
-            # Queue is full, skip cleanup for this file (will be cleaned by periodic cleanup)
+            # Queue is full — skip this file; the periodic sweeper will catch it.
             logger.warning(
                 f"Cleanup queue full, skipping scheduled cleanup for: {filepath}"
             )
@@ -399,51 +481,3 @@ class FileService:
         except Exception as e:
             logger.error(f"Error removing {filepath}: {e}")
 
-    def process_files_batch(
-        self, files: List, paths: List = None, preserve_structure: bool = False
-    ) -> Tuple[List, List]:
-        """
-        Process multiple files in batch for better performance.
-        Returns (successful_files, errors).
-        """
-
-        successful_files = []
-        errors = []
-
-        # Pre-validate all files first (fast operations)
-        valid_files = []
-        for i, file in enumerate(files):
-            is_valid, message = self.validate_file(file)
-            if not is_valid:
-                original_path = paths[i] if paths and i < len(paths) else file.filename
-                errors.append(f"{original_path}: {message}")
-            else:
-                valid_files.append((i, file))
-
-        # Process valid files
-        for i, file in valid_files:
-            try:
-                # Get original path if folder upload
-                original_path = None
-                if preserve_structure and paths and i < len(paths):
-                    original_path = paths[i]
-                else:
-                    original_path = file.filename
-
-                # Save file with streaming
-                filepath, unique_filename = self.save_uploaded_file(file, original_path)
-
-                successful_files.append(
-                    {
-                        "original_name": original_path,
-                        "original_filename": file.filename,
-                        "filepath": filepath,
-                        "unique_filename": unique_filename,
-                    }
-                )
-
-            except Exception as e:
-                original_path = file.filename if not original_path else original_path
-                errors.append(f"{original_path}: Processing error - {str(e)}")
-
-        return successful_files, errors

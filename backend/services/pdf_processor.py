@@ -131,7 +131,6 @@ class PDFProcessor:
 
         # Optimization settings
         self.max_pages_to_process = 3  # Only process first 3 pages max
-        self.text_chunk_size = 4096  # Process text in chunks to reduce memory usage
 
     def extract_text_from_pdf(self, pdf_path: str) -> Tuple[str, int]:
         """
@@ -157,7 +156,7 @@ class PDFProcessor:
         # The GIL ensures the pointer read is atomic.
         with _executor_lock:
             executor = _extraction_executor
-        future = executor.submit(self._extract_with_pymupdf_full, pdf_path)
+            future = executor.submit(self._extract_with_pymupdf_full, pdf_path)
         try:
             text_content, pages_processed = future.result(
                 timeout=EXTRACTION_TIMEOUT_SECONDS

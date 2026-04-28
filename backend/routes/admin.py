@@ -560,9 +560,10 @@ def get_admin_stats():
 @admin_required
 def trigger_cleanup():
     """Manually trigger cleanup of old files."""
+    from flask import current_app
     from backend.services import FileService
 
-    file_service = FileService()
+    file_service = FileService(current_app.config)
 
     # Clean files older than 24 hours
     file_service.cleanup_temp_files(older_than_hours=24)
@@ -1514,7 +1515,8 @@ def get_storage_health():
     }
 
     # --- Downloads folder stats (file count only to keep it cheap) ---
-    file_svc = FileService()
+    from flask import current_app as _current_app
+    file_svc = FileService(_current_app.config)
     downloads_path = os.path.join(file_svc.upload_folder, "downloads")
     try:
         if os.path.isdir(downloads_path):
@@ -1693,6 +1695,20 @@ def system_status():
     except Exception as e:
         storage_status = {"error": str(e)}
 
+    # Cleanup queue health
+    try:
+        from backend.services.file_service import get_cleanup_stats
+        cleanup_health = get_cleanup_stats()
+    except Exception:
+        cleanup_health = {}
+
+    # PDF extraction executor health
+    try:
+        from backend.services.pdf_processor import get_extraction_health
+        pdf_extraction_health = get_extraction_health()
+    except Exception:
+        pdf_extraction_health = {}
+
     # System info
     system_info = {
         "python_version": sys.version,
@@ -1710,6 +1726,8 @@ def system_status():
                 "model": model,
             },
             "storage": storage_status,
+            "cleanup": cleanup_health,
+            "pdf_extraction": pdf_extraction_health,
             "system": system_info,
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }

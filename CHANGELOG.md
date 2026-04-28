@@ -2,6 +2,19 @@
 
 All notable changes to Research PDF File Renamer are documented here.
 
+## [0.3.7] - 2026-04-27
+
+### Fixed
+
+- **Disk leak under cleanup queue exhaustion (CR-1).** `schedule_cleanup()` silently dropped cleanup tasks when the BoundedSemaphore(50) was exhausted; the comment promising a "periodic cleanup" referred to code that did not exist. Added a daemon sweeper thread (`_sweeper_loop`) that scans `temp/` and `uploads/downloads/` every 5 minutes and deletes files older than 30 minutes. This backstop fires regardless of whether the semaphore queue is full.
+- **PDF executor recycle race (CR-2).** `extract_text_from_pdf()` read `_extraction_executor` under `_executor_lock` then released the lock before calling `submit()`. The hourly recycle daemon could `shutdown(wait=False)` the old executor in that gap, causing `RuntimeError` on submit (caught silently, returning empty text). Lock is now held across `submit()`, which is non-blocking.
+- **FileService instantiated with no config in admin endpoints (CR-3).** The `/api/admin/cleanup` and `/api/admin/storage` endpoints called bare `FileService()`, getting cwd-relative folder paths instead of the Flask-configured `UPLOAD_FOLDER`/`TEMP_FOLDER`. Both now call `FileService(current_app.config)`.
+- **Dead code removed (CR-4).** `FileService.process_files_batch` (unreachable — all uploads go through the background worker) and `PDFProcessor.text_chunk_size` (set but never read) deleted.
+
+### Added
+
+- **Cleanup and PDF extraction health in system status (CR-5).** `GET /api/admin/system-status` now includes `cleanup` (queue depth, skipped total) and `pdf_extraction` (timeout count, recycle countdown) fields, matching what `/api/admin/storage` already exposed. Admin dashboard "healthy" indicator now reflects operational distress in these subsystems.
+
 ## [0.3.6] - 2026-04-27
 
 ### Fixed (post-v0.3.5 review hotfix)
