@@ -34,6 +34,8 @@ class FileService:
         # Cache for file hashes to detect duplicates
         self._file_hash_cache = {}
         self._cache_max_size = 100
+        # Lock to guard concurrent reads/writes of _file_hash_cache and its LRU eviction
+        self._cache_lock = threading.Lock()
 
         # Create folders if they don't exist
         os.makedirs(self.upload_folder, exist_ok=True)
@@ -45,22 +47,16 @@ class FileService:
     ) -> Tuple[str, str]:
         """
         Save uploaded file to temporary location with streaming and duplicate detection.
+
+        Performs a single pass over the upload stream: each chunk is written to disk
+        and incrementally fed to a SHA-256 hasher. After writing completes, the digest
+        is used to consult the duplicate cache. If a cached duplicate exists on disk,
+        the freshly written file is removed and the cached path is returned instead.
+
         Returns (filepath, unique_filename).
         """
         if filename is None:
             filename = file.filename
-
-        # Calculate file hash while streaming to detect duplicates
-        file_hash = self._calculate_file_hash(file)
-
-        # Check cache for duplicate
-        if file_hash in self._file_hash_cache:
-            existing_path = self._file_hash_cache[file_hash]
-            if os.path.exists(existing_path):
-                return existing_path, os.path.basename(existing_path)
-
-        # Reset file pointer after hash calculation
-        file.seek(0)
 
         # Generate unique filename with timestamp
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
@@ -68,45 +64,58 @@ class FileService:
         unique_filename = f"{name}_{timestamp}{ext}"
         filepath = os.path.join(self.temp_folder, unique_filename)
 
-        # Save file with streaming
-        self._save_file_streaming(file, filepath)
+        # Ensure we read from the start of the upload stream
+        try:
+            file.stream.seek(0)
+        except (AttributeError, OSError, ValueError):
+            # Some FileStorage-like objects may not be seekable; ignore and proceed
+            pass
 
-        # Update cache
+        # Single-pass: hash while writing
+        hash_sha256 = hashlib.sha256()
+        with open(filepath, "wb") as out_f:
+            while True:
+                chunk = file.stream.read(self.chunk_size)
+                if not chunk:
+                    break
+                hash_sha256.update(chunk)
+                out_f.write(chunk)
+
+        file_hash = hash_sha256.hexdigest()
+
+        # Check cache for duplicate AFTER saving (we only got the hash from one pass)
+        with self._cache_lock:
+            cached_path = self._file_hash_cache.get(file_hash)
+
+        if cached_path and os.path.exists(cached_path) and cached_path != filepath:
+            # We re-saved a duplicate; clean up the just-written file and return the cached one.
+            logger.info(
+                f"Duplicate upload detected (hash={file_hash[:12]}...); "
+                f"removing freshly written copy {filepath} in favor of cached {cached_path}"
+            )
+            try:
+                os.remove(filepath)
+            except OSError as e:
+                logger.warning(f"Failed to remove duplicate upload {filepath}: {e}")
+            return cached_path, os.path.basename(cached_path)
+
+        # Update cache (locked for thread-safe LRU eviction + write)
         self._update_cache(file_hash, filepath)
 
         return filepath, unique_filename
 
-    def _calculate_file_hash(self, file) -> str:
-        """Calculate SHA256 hash of file while streaming."""
-        hash_sha256 = hashlib.sha256()
-
-        # Read file in chunks to handle large files efficiently
-        while True:
-            chunk = file.read(self.chunk_size)
-            if not chunk:
-                break
-            hash_sha256.update(chunk)
-
-        return hash_sha256.hexdigest()
-
-    def _save_file_streaming(self, file, filepath: str):
-        """Save file using streaming to handle large files efficiently."""
-        with open(filepath, "wb") as f:
-            file.seek(0)  # Reset file pointer
-            while True:
-                chunk = file.read(self.chunk_size)
-                if not chunk:
-                    break
-                f.write(chunk)
-
     def _update_cache(self, file_hash: str, filepath: str):
-        """Update file hash cache with LRU eviction."""
-        if len(self._file_hash_cache) >= self._cache_max_size:
-            # Remove oldest entry (simple FIFO for now)
-            oldest_key = next(iter(self._file_hash_cache))
-            del self._file_hash_cache[oldest_key]
+        """Update file hash cache with LRU eviction (thread-safe)."""
+        with self._cache_lock:
+            if (
+                file_hash not in self._file_hash_cache
+                and len(self._file_hash_cache) >= self._cache_max_size
+            ):
+                # Remove oldest entry (simple FIFO for now)
+                oldest_key = next(iter(self._file_hash_cache))
+                del self._file_hash_cache[oldest_key]
 
-        self._file_hash_cache[file_hash] = filepath
+            self._file_hash_cache[file_hash] = filepath
 
     def create_zip(
         self,

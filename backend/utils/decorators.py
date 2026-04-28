@@ -1,6 +1,6 @@
 from functools import wraps
 import logging
-from flask import request, g, jsonify
+from flask import request, g, jsonify, has_request_context
 from flask_login import current_user
 from datetime import datetime, timedelta, timezone
 from backend.models import Usage, User
@@ -133,23 +133,25 @@ def record_usage(files_processed: int, user_id=None, ip_address=None, user_agent
     """
     try:
         # Allow callers from background threads to pass ip/ua directly,
-        # falling back to the request context only when available.
-        if ip_address is None:
+        # falling back to the request context only when available. Guard
+        # request access with has_request_context() so background threads
+        # don't trigger "Working outside of request context" RuntimeError.
+        if ip_address is None and has_request_context():
             ip_address = request.remote_addr
-        if user_agent is None:
+        if user_agent is None and has_request_context():
             user_agent = request.headers.get("User-Agent", "")
 
         usage = Usage(
             user_id=user_id,
             ip_address=ip_address,
-            user_agent=user_agent,
+            user_agent=user_agent or "",
             files_processed=files_processed,
         )
         db.session.add(usage)
         db.session.commit()
         logger.debug(f"Usage recorded: {files_processed} files for user {user_id}")
         return True
-    except Exception as e:
-        logger.error(f"Error logging usage: {e}")
+    except Exception:
+        logger.exception("Error logging usage")
         db.session.rollback()
         return False

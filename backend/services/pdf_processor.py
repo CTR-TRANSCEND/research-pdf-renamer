@@ -1,10 +1,8 @@
-import pypdf
-import pdfplumber
 import re
 import hashlib
 import os
-from typing import List, Tuple, Optional, Dict, Any
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Tuple, Optional, Dict, Any
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 import logging
 
 try:
@@ -15,6 +13,11 @@ except ImportError:
 
 # Configure logging
 logger = logging.getLogger(__name__)
+
+# Hard ceiling for a single PDF extraction. A malicious or corrupt PDF must
+# not be able to hang a worker beyond this.
+EXTRACTION_TIMEOUT_SECONDS = 30
+
 
 class PDFProcessor:
     def __init__(self):
@@ -28,14 +31,15 @@ class PDFProcessor:
 
         # Optimization settings
         self.max_pages_to_process = 3  # Only process first 3 pages max
-        self.use_parallel_processing = True  # Use parallel processing for multi-page PDFs
         self.text_chunk_size = 4096  # Process text in chunks to reduce memory usage
 
     def extract_text_from_pdf(self, pdf_path: str) -> Tuple[str, int]:
         """
         Extract text from PDF up to the abstract section.
         Returns extracted text and number of pages processed.
-        Optimized with caching, parallel processing, and early termination.
+
+        Uses pymupdf only. Wrapped in a 30-second hard timeout so a
+        malicious or corrupt PDF cannot hang the worker.
         """
         # Check cache first
         file_hash = self._get_file_hash(pdf_path)
@@ -44,51 +48,45 @@ class PDFProcessor:
             cached_result = self._cache[file_hash]
             return cached_result['text'], cached_result['pages']
 
-        text_content = ""
-        pages_processed = 0
-
+        # Run extraction in a worker thread with a hard timeout.
         try:
-            # Strategy: Try pymupdf FIRST (fastest, handles complex PDFs well)
-            # Only fall back to pdfplumber if pymupdf fails or returns insufficient text
-            text_content, pages_processed = self._pymupdf_extraction(pdf_path)
-
-            if text_content and len(text_content.strip()) >= 100:
-                logger.info(f"pymupdf extracted {len(text_content)} chars from {pages_processed} pages")
-                self._update_cache(file_hash, text_content, pages_processed)
-                return text_content, pages_processed
-
-            # pymupdf failed or returned too little text — try pdfplumber
-            logger.info(f"pymupdf insufficient ({len((text_content or '').strip())} chars), trying pdfplumber")
-            pdf_info = self._get_pdf_info(pdf_path)
-            if pdf_info and pdf_info['pages'] > 0:
-                if pdf_info['pages'] == 1 or not self.use_parallel_processing:
-                    text_content, pages_processed, _, _ = self._extract_sequential(pdf_path)
-                else:
-                    text_content, pages_processed, _, _ = self._extract_parallel(pdf_path)
-
-                if text_content and len(text_content.strip()) >= 100:
-                    text_content = self._clean_text(text_content)
-                    self._update_cache(file_hash, text_content, pages_processed)
-                    return text_content, pages_processed
-
-            # Last resort: pypdf
-            logger.info("pdfplumber insufficient, trying pypdf fallback")
-            text, pages = self._fallback_extraction(pdf_path)
-            if text and len(text.strip()) >= 100:
-                self._update_cache(file_hash, text, pages)
-                return text, pages
-
-            # Return whatever we got (may be empty)
-            best_text = max([text_content or "", text or ""], key=lambda t: len(t.strip()))
-            return best_text, pages_processed or pages
-
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(self._extract_with_pymupdf_full, pdf_path)
+                try:
+                    text_content, pages_processed = future.result(
+                        timeout=EXTRACTION_TIMEOUT_SECONDS
+                    )
+                except FuturesTimeoutError:
+                    logger.error(
+                        f"PDF extraction timed out after {EXTRACTION_TIMEOUT_SECONDS}s "
+                        f"for {os.path.basename(pdf_path)}"
+                    )
+                    return "", 0
         except Exception as e:
-            logger.error(f"Error processing PDF {os.path.basename(pdf_path)}: {e}")
-            # Emergency fallback
-            text, pages = self._pymupdf_extraction(pdf_path)
-            if not text:
-                text, pages = self._fallback_extraction(pdf_path)
-            return text or "", pages or 0
+            logger.error(
+                f"Error processing PDF {os.path.basename(pdf_path)}: {e}"
+            )
+            return "", 0
+
+        if text_content and len(text_content.strip()) >= self.min_text_length:
+            logger.info(
+                f"pymupdf extracted {len(text_content)} chars from "
+                f"{pages_processed} pages of {os.path.basename(pdf_path)}"
+            )
+            self._update_cache(file_hash, text_content, pages_processed)
+            return text_content, pages_processed
+
+        # Insufficient text — log a warning and return whatever we got.
+        logger.warning(
+            f"pymupdf returned insufficient text "
+            f"({len((text_content or '').strip())} chars) for "
+            f"{os.path.basename(pdf_path)}; returning partial result"
+        )
+        return text_content or "", pages_processed or 0
+
+    def _extract_with_pymupdf_full(self, pdf_path: str) -> Tuple[str, int]:
+        """Run the full pymupdf extraction (called inside the timeout-bound worker)."""
+        return self._pymupdf_extraction(pdf_path)
 
     def _contains_abstract(self, text: str) -> bool:
         """Check if the page contains an abstract section."""
@@ -156,54 +154,10 @@ class PDFProcessor:
         text = re.sub(r' +', ' ', text)
         return text.strip()
 
-    def _fallback_extraction(self, pdf_path: str) -> Tuple[str, int]:
-        """Fallback method using pypdf with enhanced error handling."""
-        text = ""
-        pages_processed = 0
-
-        try:
-            with open(pdf_path, 'rb') as file:
-                pdf_reader = pypdf.PdfReader(file)
-
-                # Extract first 3 pages (more than before for better coverage)
-                max_pages = min(3, len(pdf_reader.pages))
-
-                for i in range(max_pages):
-                    try:
-                        page = pdf_reader.pages[i]
-                        page_text = page.extract_text()
-
-                        # Only add page text if it contains actual content
-                        if page_text and page_text.strip():
-                            # Clean up common PDF extraction artifacts
-                            page_text = page_text.replace('\x00', '')  # Remove null bytes
-                            page_text = page_text.replace('\n\n', '\n')  # Reduce excessive newlines
-
-                            text += f"\n--- Page {i+1} ---\n{page_text}\n"
-                            pages_processed += 1
-
-                            # Stop if we find abstract or sufficient content
-                            if self._contains_abstract(page_text) or len(page_text) > 500:
-                                break
-
-                    except Exception as page_error:
-                        logger.warning(f"pypdf failed to extract page {i+1}: {page_error}")
-                        continue
-
-        except Exception as e:
-            logger.error(f"pypdf fallback extraction failed: {e}")
-            return "", 0
-
-        # Clean up the final text
-        if text:
-            text = self._clean_text(text)
-
-        return text, pages_processed
-
     def _pymupdf_extraction(self, pdf_path: str) -> Tuple[str, int]:
-        """Fallback method using pymupdf (fitz) for complex PDFs."""
+        """Extract text using pymupdf (fitz). Sole extraction backend."""
         if not HAS_PYMUPDF:
-            logger.warning("pymupdf not installed, skipping pymupdf fallback")
+            logger.error("pymupdf not installed; cannot extract PDF text")
             return "", 0
 
         text = ""
@@ -211,29 +165,32 @@ class PDFProcessor:
 
         try:
             doc = pymupdf.open(pdf_path)
-            max_pages = min(3, len(doc))
+            try:
+                max_pages = min(self.max_pages_to_process, len(doc))
 
-            for i in range(max_pages):
-                try:
-                    page = doc[i]
-                    page_text = page.get_text()
+                for i in range(max_pages):
+                    try:
+                        page = doc[i]
+                        page_text = page.get_text()
 
-                    if page_text and page_text.strip():
-                        page_text = page_text.replace('\x00', '')
-                        text += f"\n--- Page {i+1} ---\n{page_text}\n"
-                        pages_processed += 1
+                        if page_text and page_text.strip():
+                            page_text = page_text.replace('\x00', '')
+                            text += f"\n--- Page {i+1} ---\n{page_text}\n"
+                            pages_processed += 1
 
-                        if self._contains_abstract(page_text) or len(page_text) > 500:
-                            break
+                            if self._contains_abstract(page_text) or len(page_text) > 500:
+                                break
 
-                except Exception as page_error:
-                    logger.warning(f"pymupdf failed to extract page {i+1}: {page_error}")
-                    continue
-
-            doc.close()
+                    except Exception as page_error:
+                        logger.warning(
+                            f"pymupdf failed to extract page {i+1}: {page_error}"
+                        )
+                        continue
+            finally:
+                doc.close()
 
         except Exception as e:
-            logger.error(f"pymupdf fallback extraction failed: {e}")
+            logger.error(f"pymupdf extraction failed: {e}")
             return "", 0
 
         if text:
@@ -267,214 +224,21 @@ class PDFProcessor:
 
     def _get_pdf_info(self, pdf_path: str) -> Optional[Dict[str, Any]]:
         """Get basic PDF info without full processing."""
+        if not HAS_PYMUPDF:
+            return None
         try:
-            with open(pdf_path, 'rb') as file:
-                pdf_reader = pypdf.PdfReader(file)
+            doc = pymupdf.open(pdf_path)
+            try:
                 return {
-                    'pages': len(pdf_reader.pages),
-                    'encrypted': pdf_reader.is_encrypted,
-                    'metadata': pdf_reader.metadata
+                    'pages': len(doc),
+                    'encrypted': doc.is_encrypted,
+                    'metadata': doc.metadata,
                 }
+            finally:
+                doc.close()
         except Exception as e:
             logger.error(f"Error getting PDF info: {e}")
             return None
-
-    def _extract_sequential(self, pdf_path: str) -> Tuple[str, int, bool, bool]:
-        """Extract text sequentially from PDF pages with pypdf fallback."""
-        text_content = ""
-        pages_processed = 0
-        found_abstract = False
-        found_required_info = False
-
-        # First try pdfplumber with comprehensive fallbacks
-        with pdfplumber.open(pdf_path) as pdf:
-            # Limit processing to first few pages for performance
-            max_pages = min(self.max_pages_to_process, len(pdf.pages))
-
-            for i in range(max_pages):
-                page = pdf.pages[i]
-                # Use robust text extraction with fallbacks
-                page_text = self._extract_page_text(page, i)
-
-                if not page_text or page_text.strip() == "":
-                    logger.debug(f"No text found on page {i+1} with pdfplumber")
-                    continue
-
-                text_content += f"\n--- Page {i+1} ---\n{page_text}\n"
-                pages_processed += 1
-
-                # Early termination checks
-                if self._contains_abstract(page_text):
-                    found_abstract = True
-                    break
-
-                if i == 0:
-                    found_required_info = self._has_required_info(page_text)
-                elif i == 1 and not found_required_info:
-                    # Continue to second page if first didn't have required info
-                    continue
-                elif i >= 1:
-                    # Stop after second page if we still don't have what we need
-                    break
-
-        # If pdfplumber failed completely or got minimal text, try pypdf
-        if pages_processed == 0 or len(text_content.strip()) < 100:
-            logger.warning(f"pdfplumber extraction was insufficient, trying pypdf fallback")
-            fallback_text, fallback_pages = self._fallback_extraction(pdf_path)
-
-            if fallback_text and len(fallback_text.strip()) > len(text_content.strip()):
-                text_content = fallback_text
-                pages_processed = fallback_pages
-                logger.info(f"pypdf fallback extracted {len(fallback_text)} characters from {fallback_pages} pages")
-            else:
-                logger.warning("pypdf fallback also failed or produced less text")
-
-        # If both pdfplumber and pypdf failed, try pymupdf
-        if pages_processed == 0 or len(text_content.strip()) < 100:
-            logger.warning("pdfplumber and pypdf insufficient, trying pymupdf fallback")
-            mupdf_text, mupdf_pages = self._pymupdf_extraction(pdf_path)
-
-            if mupdf_text and len(mupdf_text.strip()) > len(text_content.strip()):
-                text_content = mupdf_text
-                pages_processed = mupdf_pages
-                logger.info(f"pymupdf fallback extracted {len(mupdf_text)} characters from {mupdf_pages} pages")
-            else:
-                logger.warning("pymupdf fallback also failed or produced less text")
-
-        return text_content, pages_processed, found_abstract, found_required_info
-
-    def _extract_parallel(self, pdf_path: str) -> Tuple[str, int, bool, bool]:
-        """Extract text from multiple pages in parallel."""
-        text_content = ""
-        pages_processed = 0
-        found_abstract = False
-        found_required_info = False
-
-        with pdfplumber.open(pdf_path) as pdf:
-            # Limit processing to first few pages for performance
-            max_pages = min(self.max_pages_to_process, len(pdf.pages))
-
-            # Process pages in parallel, but maintain order for results
-            with ThreadPoolExecutor(max_workers=min(3, max_pages)) as executor:
-                # Submit page extraction tasks
-                future_to_page = {
-                    executor.submit(self._extract_page_text, page, i): i
-                    for i, page in enumerate(pdf.pages[:max_pages])
-                }
-
-                # Collect results in order
-                page_results = []
-                for future in as_completed(future_to_page):
-                    page_idx = future_to_page[future]
-                    try:
-                        page_text = future.result(timeout=10)  # 10 second timeout per page
-                        if page_text:
-                            page_results.append((page_idx, page_text))
-                    except Exception as e:
-                        logger.error(f"Error extracting page {page_idx + 1}: {e}")
-                        continue
-
-                # Sort results by page index to maintain order
-                page_results.sort(key=lambda x: x[0])
-
-                # Process results in order
-                for page_idx, page_text in page_results:
-                    text_content += f"\n--- Page {page_idx+1} ---\n{page_text}\n"
-                    pages_processed += 1
-
-                    # Early termination checks
-                    if self._contains_abstract(page_text):
-                        found_abstract = True
-                        break
-
-                    if page_idx == 0:
-                        found_required_info = self._has_required_info(page_text)
-                    elif page_idx == 1 and not found_required_info:
-                        continue
-                    elif page_idx >= 1:
-                        break
-
-        # If pdfplumber parallel extraction failed, try pypdf then pymupdf
-        if pages_processed == 0 or len(text_content.strip()) < 100:
-            logger.warning("Parallel pdfplumber extraction insufficient, trying pypdf fallback")
-            fallback_text, fallback_pages = self._fallback_extraction(pdf_path)
-
-            if fallback_text and len(fallback_text.strip()) > len(text_content.strip()):
-                text_content = fallback_text
-                pages_processed = fallback_pages
-                logger.info(f"pypdf fallback extracted {len(fallback_text)} characters from {fallback_pages} pages")
-
-        if pages_processed == 0 or len(text_content.strip()) < 100:
-            logger.warning("pypdf also insufficient, trying pymupdf fallback")
-            mupdf_text, mupdf_pages = self._pymupdf_extraction(pdf_path)
-
-            if mupdf_text and len(mupdf_text.strip()) > len(text_content.strip()):
-                text_content = mupdf_text
-                pages_processed = mupdf_pages
-                logger.info(f"pymupdf fallback extracted {len(mupdf_text)} characters from {mupdf_pages} pages")
-
-        return text_content, pages_processed, found_abstract, found_required_info
-
-    def _extract_page_text(self, page, page_idx: int) -> Optional[str]:
-        """Extract text from a single page with comprehensive fallback options."""
-        # First try basic extraction (most compatible)
-        try:
-            text = page.extract_text()
-            if text and text.strip():
-                return text
-        except Exception as e:
-            logger.warning(f"Basic text extraction failed for page {page_idx + 1}: {e}")
-
-        # Try with optimized settings as second option
-        try:
-            settings = {
-                "vertical_strategy": "text",
-                "horizontal_strategy": "text",
-                "keep_blank_chars": False
-            }
-            text = page.extract_text(settings=settings)
-            if text and text.strip():
-                return text
-        except Exception as e:
-            logger.warning(f"Optimized text extraction failed for page {page_idx + 1}: {e}")
-
-        # Try with minimal settings as third option
-        try:
-            settings = {
-                "layout": True,
-                "x_tolerance": 1,
-                "y_tolerance": 1
-            }
-            text = page.extract_text(settings=settings)
-            if text and text.strip():
-                return text
-        except Exception as e:
-            logger.warning(f"Layout-based extraction failed for page {page_idx + 1}: {e}")
-
-        # Try with basic x/y settings
-        try:
-            text = page.extract_text(x_tolerance=1, y_tolerance=1)
-            if text and text.strip():
-                return text
-        except Exception as e:
-            logger.warning(f"X/Y tolerance extraction failed for page {page_idx + 1}: {e}")
-
-        # Try with different strategy
-        try:
-            settings = {
-                "vertical_strategy": "explicit",
-                "horizontal_strategy": "explicit",
-                "explicit_vertical_lines": [],
-                "explicit_horizontal_lines": []
-            }
-            text = page.extract_text(settings=settings)
-            if text and text.strip():
-                return text
-        except Exception as e:
-            logger.warning(f"Explicit strategy extraction failed for page {page_idx + 1}: {e}")
-
-        logger.error(f"All pdfplumber extraction methods failed for page {page_idx + 1}")
-        return None
 
     def _update_cache(self, file_hash: str, text: str, pages: int):
         """Update PDF processing cache with LRU eviction."""
@@ -506,10 +270,17 @@ class PDFProcessor:
                 if magic != b'%PDF':
                     return False
 
-                # Quick validation with pypdf
-                file.seek(0)
-                pdf_reader = pypdf.PdfReader(file)
-                return len(pdf_reader.pages) > 0
+            # Quick page-count validation with pymupdf
+            if not HAS_PYMUPDF:
+                # Magic-byte check passed; no library available to verify pages
+                logger.warning("pymupdf not available; skipping page-count validation")
+                return True
+
+            doc = pymupdf.open(pdf_path)
+            try:
+                return len(doc) > 0
+            finally:
+                doc.close()
         except Exception as e:
             logger.error(f"PDF validation error: {e}")
             return False

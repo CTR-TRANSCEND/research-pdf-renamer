@@ -296,6 +296,61 @@ def create_app(config_name=None):
 
         g.request_id = generate_request_id()
 
+    # ------------------------------------------------------------------
+    # Structured logging wiring (REQ-OPS-003)
+    #
+    # The structured_logging utilities are defined in
+    # backend/utils/structured_logging.py but were never invoked. Wire
+    # them up here so request_id ends up on every log record and JSON
+    # output is emitted in production / when explicitly requested.
+    # ------------------------------------------------------------------
+    class _RequestIdLogFilter(logging.Filter):
+        """Copy ``flask.g.request_id`` onto every log record.
+
+        If we are outside a Flask request context (e.g. startup,
+        background thread, CLI), ``g`` is unavailable — we set
+        ``request_id`` to ``"no-request"`` so log formatters can rely on
+        the attribute always being present.
+        """
+
+        def filter(self, record: logging.LogRecord) -> bool:
+            try:
+                # Importing inside filter() avoids circular-import risk
+                # and ensures we always read the current g.
+                from flask import g as _flask_g, has_request_context
+
+                if has_request_context():
+                    record.request_id = getattr(_flask_g, "request_id", "no-request")
+                else:
+                    record.request_id = "no-request"
+            except Exception:
+                record.request_id = "no-request"
+            return True
+
+    _request_id_filter = _RequestIdLogFilter()
+
+    # Attach the filter to the app logger and its handlers, plus the
+    # root logger's handlers, so module-level loggers (e.g. the
+    # ``logger = logging.getLogger(__name__)`` at the top of this file)
+    # also get request_id correlation.
+    app.logger.addFilter(_request_id_filter)
+    for _h in app.logger.handlers:
+        _h.addFilter(_request_id_filter)
+    for _h in logging.getLogger().handlers:
+        _h.addFilter(_request_id_filter)
+
+    # Switch to JSON formatting if requested via config or when running
+    # under FLASK_ENV=production.
+    _log_format = app.config.get("LOG_FORMAT")
+    if _log_format == "json" or os.environ.get("FLASK_ENV") == "production":
+        from backend.utils.structured_logging import setup_structured_logging
+
+        setup_structured_logging(app)
+        # setup_structured_logging may have added a new handler; make
+        # sure it also carries the request_id filter.
+        for _h in app.logger.handlers:
+            _h.addFilter(_request_id_filter)
+
     @app.after_request
     def _record_request_metrics(response):
         """Record request completion in MetricsCollector (REQ-OPS-002)."""
@@ -489,12 +544,53 @@ def create_app(config_name=None):
             try:
                 db.session.add(auto_admin)
                 db.session.commit()
-                logger.info("=" * 50)
-                logger.info("AUTO-CREATED ADMIN ACCOUNT")
-                logger.info(f"  Email:    admin@local")
-                logger.info(f"  Password: {auto_password}")
-                logger.info("  Change this password after first login!")
-                logger.info("=" * 50)
+
+                # Persist password to a 0600-mode file inside the Flask
+                # instance folder rather than logging it to stdout. Logging
+                # the plaintext password leaks it into container/journal
+                # logs in perpetuity.
+                try:
+                    os.makedirs(app.instance_path, exist_ok=True)
+                    password_path = os.path.join(
+                        app.instance_path, ".admin_initial_password"
+                    )
+                    # Use os.open with O_CREAT|O_WRONLY|O_TRUNC and explicit
+                    # mode so the file is created with 0600 atomically; also
+                    # call os.chmod afterwards in case the file pre-existed.
+                    fd = os.open(
+                        password_path,
+                        os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
+                        0o600,
+                    )
+                    try:
+                        with os.fdopen(fd, "w") as fh:
+                            fh.write(auto_password + "\n")
+                    except Exception:
+                        # If fdopen failed, fd was already consumed; if the
+                        # write itself failed, best-effort close.
+                        try:
+                            os.close(fd)
+                        except OSError:
+                            pass
+                        raise
+                    # Belt-and-suspenders: enforce 0600 even if umask or a
+                    # pre-existing file made the open()-time mode lenient.
+                    os.chmod(password_path, 0o600)
+
+                    logger.info(
+                        "Created admin user. Initial password written to "
+                        "%s (read once and delete).",
+                        password_path,
+                    )
+                except OSError as exc:
+                    # If we can't write the file, fail loudly but DO NOT
+                    # fall back to logging the password.
+                    logger.error(
+                        "Auto-created admin@local but could not persist "
+                        "initial password to instance folder (%s). Reset "
+                        "the password via the CLI before logging in.",
+                        exc,
+                    )
             except IntegrityError:
                 db.session.rollback()
                 logger.info("Admin account already created by another worker")

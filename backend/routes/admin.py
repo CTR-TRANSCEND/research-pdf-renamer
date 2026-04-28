@@ -1446,12 +1446,17 @@ def save_api_key():
         if not updated:
             new_lines.append(env_line)
 
-        # Write to .env file
-        with open(env_file, "w") as f:
+        # Atomic write: write to temp file, fsync, then replace.
+        # This prevents .env truncation if the process dies mid-write.
+        tmp_path = env_file + ".tmp"
+        with open(tmp_path, "w") as f:
             f.writelines(new_lines)
+            f.flush()
+            os.fsync(f.fileno())
 
-        # Set secure permissions (read/write by owner only)
-        os.chmod(env_file, stat.S_IRUSR | stat.S_IWUSR)
+        # Set secure permissions on temp file before replacing (read/write by owner only)
+        os.chmod(tmp_path, stat.S_IRUSR | stat.S_IWUSR)
+        os.replace(tmp_path, env_file)
 
         # CRITICAL: Update the current process's environment immediately
         os.environ[env_var_name] = api_key

@@ -251,6 +251,39 @@ function switchMode(mode) {
     }
 }
 
+// File size limits (must mirror server-side MAX_CONTENT_LENGTH).
+// Per-file hard cap rejects upload; total size soft cap warns only.
+const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024;       // 50 MB per file
+const TOTAL_SIZE_WARN_BYTES = 100 * 1024 * 1024;    // 100 MB combined
+
+// Validate a list of File objects against size limits.
+// Returns true if upload may proceed, false if a hard limit was hit.
+// Shows a toast for both the hard reject and the soft warning cases.
+function validateFileSizes(files) {
+    // Hard reject: any single file over per-file cap
+    const oversized = files.filter(f => f.size > MAX_FILE_SIZE_BYTES);
+    if (oversized.length > 0) {
+        const names = oversized.slice(0, 3).map(f => `${f.name} (${formatFileSize(f.size)})`).join(', ');
+        const more = oversized.length > 3 ? `, and ${oversized.length - 3} more` : '';
+        showToast(
+            `File too large (max ${formatFileSize(MAX_FILE_SIZE_BYTES)} per file): ${names}${more}`,
+            'error'
+        );
+        return false;
+    }
+
+    // Soft warning: combined size over total cap
+    const totalSize = files.reduce((sum, f) => sum + f.size, 0);
+    if (totalSize > TOTAL_SIZE_WARN_BYTES) {
+        showToast(
+            `Large upload: ${formatFileSize(totalSize)} total. This may take longer to process.`,
+            'warning'
+        );
+    }
+
+    return true;
+}
+
 // Handle folder upload
 function handleFolder(files) {
     const filesArray = Array.from(files);
@@ -258,6 +291,11 @@ function handleFolder(files) {
 
     if (pdfFiles.length === 0) {
         showToast('No PDF files found in the folder', 'error');
+        return;
+    }
+
+    // Enforce per-file size cap; warn on large total.
+    if (!validateFileSizes(pdfFiles)) {
         return;
     }
 
@@ -280,6 +318,12 @@ function handleFiles(files) {
 
     if (pdfFiles.length === 0) {
         showToast('Please select PDF files only', 'error');
+        return;
+    }
+
+    // Enforce per-file size cap; warn on large combined total (existing + new).
+    const combinedForSize = [...selectedFiles, ...pdfFiles];
+    if (!validateFileSizes(combinedForSize)) {
         return;
     }
 
@@ -701,9 +745,9 @@ function showProcessingModal(files) {
 
     // Create progress items
     progressList.innerHTML = '';
-    files.forEach(item => {
+    files.forEach((item, index) => {
         const name = uploadMode === 'folder' ? item.path : item.name;
-        const progressItem = createProgressItem(name);
+        const progressItem = createProgressItem(name, index);
         progressList.appendChild(progressItem);
     });
 
@@ -986,10 +1030,14 @@ function closeProcessingModal() {
 }
 
 // Create progress item for file
-function createProgressItem(fileName) {
+// Uses an index-based stable ID to avoid collisions when two filenames
+// would normalize to the same string (e.g. "paper(1).pdf" and "paper-1-pdf").
+// The fileName itself is stored on the element via dataset for lookup.
+function createProgressItem(fileName, index) {
     const div = document.createElement('div');
-    div.className = 'flex items-center justify-between p-3 bg-gray-50 rounded-lg';
-    div.id = `progress-${fileName.replace(/[^a-zA-Z0-9]/g, '-')}`;
+    div.className = 'flex items-center justify-between p-3 bg-gray-50 rounded-lg progress-item';
+    div.id = `progress-${index}`;
+    div.dataset.filename = fileName;
     div.innerHTML = `
         <div class="flex items-center flex-1">
             <i class="fas fa-file-pdf text-red-600 mr-3 file-icon"></i>
@@ -1008,9 +1056,19 @@ function createProgressItem(fileName) {
 }
 
 // Update file progress
+// Looks up the row by matching dataset.filename (set in createProgressItem).
+// We iterate and compare instead of using a CSS attribute selector to avoid
+// having to escape arbitrary filename characters (quotes, brackets, etc.) for
+// the selector parser.
 function updateFileProgress(fileName, status, percent, type = 'success') {
-    const elementId = `progress-${fileName.replace(/[^a-zA-Z0-9]/g, '-')}`;
-    const element = document.getElementById(elementId);
+    const items = document.querySelectorAll('#modal-progress-list .progress-item');
+    let element = null;
+    for (const item of items) {
+        if (item.dataset.filename === fileName) {
+            element = item;
+            break;
+        }
+    }
 
     if (!element) return;
 
@@ -1410,7 +1468,7 @@ async function showUsageStats() {
         const modal = document.createElement('div');
         modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
         modal.innerHTML = `
-            <div class="bg-white rounded-lg shadow-xl p-6 max-w-2xl w-full mx-4 max-h-[80vh] overflow-y-auto">
+            <div class="bg-white rounded-lg shadow-xl p-6 max-w-2xl w-full mx-4" style="max-height: 80vh; overflow-y: auto;">
                 <div class="flex justify-between items-center mb-6">
                     <h3 class="text-2xl font-bold text-gray-900">Your Usage Statistics</h3>
                     <button onclick="closeModal(this)" class="text-gray-400 hover:text-gray-600">
