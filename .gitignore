@@ -298,3 +298,11 @@ archive/
 .claude/
 docker-compose.override.yml
 .agency/
+
+# Playwright test artifacts
+.playwright-mcp/
+test-*.png
+verify-*.png
+after-*.png
+folder-modal-*.png
+register-modal-*.png
