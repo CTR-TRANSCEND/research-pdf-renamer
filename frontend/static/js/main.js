@@ -76,7 +76,7 @@ function _activateModal(modal) {
             }
         }
     };
-    modal.addEventListener('keydown', keyHandler);
+    document.addEventListener('keydown', keyHandler);
     _modalState.set(modal, { previousFocus, keyHandler });
     // Move focus into the modal
     const focusable = _focusableInside(modal);
@@ -86,7 +86,7 @@ function _activateModal(modal) {
 function _deactivateModal(modal) {
     const state = _modalState.get(modal);
     if (!state) return;
-    modal.removeEventListener('keydown', state.keyHandler);
+    document.removeEventListener('keydown', state.keyHandler);
     _modalState.delete(modal);
     if (state.previousFocus && typeof state.previousFocus.focus === 'function') {
         state.previousFocus.focus();
@@ -1325,6 +1325,7 @@ async function handleLogin(event) {
     } finally {
         loginBtn.disabled = false;
         loginBtn.innerHTML = 'Login';
+        loginBtn.focus();
     }
 }
 
