@@ -2,6 +2,26 @@
 
 All notable changes to Research PDF File Renamer are documented here.
 
+## [0.3.6] - 2026-04-27
+
+### Fixed (post-v0.3.5 review hotfix)
+
+- **PDF extraction timeout was non-functional.** The `with ThreadPoolExecutor(...)` context manager called `shutdown(wait=True)` on exit, blocking until the hung worker finished — defeating the timeout entirely. Replaced with module-level long-lived executor; hung threads now park in pool slots without blocking the request thread. Also added thread-safety lock around `PDFProcessor._cache`.
+- **Concurrent duplicate-upload race.** Post-write cache lookup returned the same temp path to two threads; when thread A's `move_to_downloads` ran, thread B's file vanished. Each upload now keeps its own private temp file; cache is informational only.
+- **Non-root container couldn't upgrade from v0.3.4** because Docker named volumes contained root-owned files. Added `docker/entrypoint.sh` that starts as root, chowns `/app/instance`, `/app/uploads`, `/app/temp` to the `app` user, then drops privileges via `gosu`. Idempotent on fresh deployments.
+- **Modal Escape key bypassed per-modal cleanup**, leaking `_pollingInterval` / `_autoCloseInterval` / `_autoCloseListeners`. Added `data-modal-close` attribute to all 12 close buttons in templates so the Escape handler invokes the proper cleanup function.
+- **Stale `tests/unit/test_pypdf_migration.py`** referenced removed methods and `import pypdf` — would fail entire test run. Deleted.
+
+### Added (v0.3.6 hardening)
+
+- **PDF extraction executor hourly recycle** — daemon thread atomically swaps the executor every hour and calls `shutdown(wait=False)` on the old one so leaked timeout-hung threads can eventually exit. New `get_extraction_health()` helper exposes timeout count and recycle countdown.
+- **Storage health endpoint** `GET /api/admin/storage` — returns disk usage, downloads dir size/count, cleanup queue stats, PDF extraction health. New `_skipped_cleanup_count` metric in `FileService` (locked).
+- **System status LLM probe is now cached for 60 seconds**. Was hitting the LLM API on every admin dashboard load.
+- **Per-route rate limits**: `/api/upload` 20/hr (admin exempt), `/api/upload/progress/<id>` 600/min, `/api/download` 60/min. Removed dead `_file_processor_pool` module global from `upload.py`.
+- **JWT_SECRET_KEY** environment variable for separating JWT signing from Flask `SECRET_KEY`. Defaults to `SECRET_KEY` for backward compatibility; startup warning emitted when shared.
+- **Structured logging extended to gunicorn handlers** — `gunicorn.access` and `gunicorn.error` loggers now emit JSON with `request_id` correlation under `FLASK_ENV=production`.
+- **Upgrade guide** added to README.md explaining the non-root container migration (auto-handled by entrypoint, no manual action needed).
+
 ## [0.3.5] - 2026-04-27
 
 ### Breaking
