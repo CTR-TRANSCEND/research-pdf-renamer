@@ -4,6 +4,10 @@ All notable changes to Research PDF File Renamer are documented here.
 
 ## [0.3.5] - 2026-04-27
 
+### Breaking
+
+- **Container now runs as non-root user (UID 1000 `app`).** Existing deployments are auto-migrated by the new entrypoint script (`docker/entrypoint.sh`), which `chown`s the writable volumes on first start before dropping privileges via `gosu`. No manual action required.
+
 ### Security & Reliability
 
 #### Critical

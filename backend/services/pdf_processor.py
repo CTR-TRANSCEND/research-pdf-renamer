@@ -2,6 +2,7 @@ import re
 import hashlib
 import os
 import threading
+import time
 from typing import Tuple, Optional, Dict, Any
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 import logging
@@ -19,6 +20,9 @@ logger = logging.getLogger(__name__)
 # not be able to hang a worker beyond this.
 EXTRACTION_TIMEOUT_SECONDS = 30
 
+# How often to recycle the executor to reclaim slots leaked by hung threads.
+_EXECUTOR_RECYCLE_INTERVAL_SECONDS = 3600  # 1 hour
+
 # Module-level, long-lived executor — intentionally NOT used as a context
 # manager.  When a pymupdf call hangs past EXTRACTION_TIMEOUT_SECONDS the
 # gunicorn request thread returns immediately (future.result() raises
@@ -26,14 +30,90 @@ EXTRACTION_TIMEOUT_SECONDS = 30
 # executor.  Python threads cannot be killed, so the slot is permanently
 # consumed by each hung call, but with max_workers=4 the application can
 # absorb 4 simultaneous hangs before new submissions queue rather than
-# returning instantly.  In practice, corrupt PDFs are rare and gunicorn
-# processes recycle periodically, which clears the leaked threads.
-# This is strictly better than the previous `with ThreadPoolExecutor(…)`
-# pattern, whose __exit__ called shutdown(wait=True) — blocking the request
-# thread for as long as pymupdf chose to hang.
+# returning instantly.  The periodic recycle (see _start_recycle_loop) swaps
+# in a fresh executor every hour so leaked slots can't accumulate indefinitely.
 _extraction_executor = ThreadPoolExecutor(
     max_workers=4, thread_name_prefix="pdf_extract"
 )
+
+# Lock that serialises executor swaps and health reads.
+_executor_lock = threading.Lock()
+
+# Tracks when the current executor was created (monotonic seconds).
+_executor_created_at = time.monotonic()  # type: float
+
+# ── Slot-leak counter ──────────────────────────────────────────────────────
+# Incremented (under _timeout_count_lock) each time a pymupdf call exceeds
+# EXTRACTION_TIMEOUT_SECONDS.  Useful for health monitoring.
+_timeout_count = 0  # type: int
+_timeout_count_lock = threading.Lock()
+
+# Guard so the recycle daemon thread is started at most once per process.
+_recycle_thread_started = False
+_recycle_thread_lock = threading.Lock()
+
+
+def _recycle_executor() -> None:
+    """Swap in a fresh executor and shut down the old one (no wait)."""
+    global _extraction_executor, _executor_created_at
+    new_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="pdf_extract")
+    with _executor_lock:
+        old_executor = _extraction_executor
+        _extraction_executor = new_executor
+        _executor_created_at = time.monotonic()
+    # Shut down the old executor without blocking; any hung pymupdf threads
+    # inside it will eventually finish on their own.
+    old_executor.shutdown(wait=False)
+    logger.info(
+        "pdf_processor: executor recycled — old executor shut down (wait=False)"
+    )
+
+
+def _recycle_loop() -> None:
+    """Daemon loop: recycle the executor every _EXECUTOR_RECYCLE_INTERVAL_SECONDS."""
+    while True:
+        time.sleep(_EXECUTOR_RECYCLE_INTERVAL_SECONDS)
+        try:
+            _recycle_executor()
+        except Exception:
+            logger.exception("pdf_processor: unexpected error during executor recycle")
+
+
+def _start_recycle_loop() -> None:
+    """Start the background recycle daemon thread exactly once per process."""
+    global _recycle_thread_started
+    if _recycle_thread_started:
+        return
+    with _recycle_thread_lock:
+        if _recycle_thread_started:
+            return
+        t = threading.Thread(target=_recycle_loop, name="pdf_extract_recycler", daemon=True)
+        t.start()
+        _recycle_thread_started = True
+        logger.debug("pdf_processor: executor recycle daemon thread started")
+
+
+def get_extraction_health() -> Dict[str, Any]:
+    """
+    Return a snapshot of executor health for admin/monitoring endpoints.
+
+    Keys:
+        timeouts_total        — cumulative count of timed-out extractions
+        executor_max_workers  — fixed capacity of the current executor
+        next_recycle_in_seconds — approximate seconds until the next scheduled
+                                  recycle (may be negative if a recycle is late)
+    """
+    with _timeout_count_lock:
+        tc = _timeout_count
+    with _executor_lock:
+        created = _executor_created_at
+    elapsed = time.monotonic() - created
+    next_recycle = max(0.0, _EXECUTOR_RECYCLE_INTERVAL_SECONDS - elapsed)
+    return {
+        "timeouts_total": tc,
+        "executor_max_workers": 4,
+        "next_recycle_in_seconds": round(next_recycle),
+    }
 
 
 class PDFProcessor:
@@ -69,18 +149,24 @@ class PDFProcessor:
                 cached_result = self._cache[file_hash]
                 return cached_result['text'], cached_result['pages']
 
-        # Submit to the module-level long-lived executor (NOT a context manager).
-        # future.result(timeout=…) raises FuturesTimeoutError after 30 s and
-        # returns immediately to the caller.  The worker thread may keep running
-        # inside _extraction_executor — it cannot be killed — but it never
-        # blocks THIS thread.  See module-level comment on _extraction_executor.
-        future = _extraction_executor.submit(self._extract_with_pymupdf_full, pdf_path)
+        # Ensure the background recycle daemon is running (lazy, once per process).
+        _start_recycle_loop()
+
+        # Re-read the module global each call so we always submit to the *current*
+        # executor (never a locally-cached reference that may already be shut down).
+        # The GIL ensures the pointer read is atomic.
+        with _executor_lock:
+            executor = _extraction_executor
+        future = executor.submit(self._extract_with_pymupdf_full, pdf_path)
         try:
             text_content, pages_processed = future.result(
                 timeout=EXTRACTION_TIMEOUT_SECONDS
             )
         except FuturesTimeoutError:
             future.cancel()  # no-op if already running; cleans up if still queued
+            global _timeout_count
+            with _timeout_count_lock:
+                _timeout_count += 1
             logger.error(
                 f"PDF extraction timed out after {EXTRACTION_TIMEOUT_SECONDS}s "
                 f"for {os.path.basename(pdf_path)}"

@@ -1,5 +1,7 @@
 from flask import Blueprint, request, jsonify, send_file
 from flask_login import current_user
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from backend.models import Usage
 from backend.database import db
 from backend.services import PDFProcessor, LLMService, FileService
@@ -18,10 +20,10 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 upload = Blueprint("upload", __name__)
 logger = logging.getLogger(__name__)
 
-# PERF-002: Module-level shared thread pool for file processing
-# Bounded by CPU count to prevent resource exhaustion
+# PERF-001: Rate limiter for upload routes (lazy init — wired via init_app in create_app)
+limiter = Limiter(key_func=get_remote_address)
+
 MAX_WORKERS = 2  # Keep low to avoid overwhelming LLM server with concurrent requests
-_file_processor_pool = ThreadPoolExecutor(max_workers=MAX_WORKERS, thread_name_prefix="file_processor")
 
 # Initialize services (lazy initialization to avoid config issues)
 pdf_processor = None
@@ -102,6 +104,10 @@ def get_services():
 
 
 @upload.route("/upload", methods=["POST"])
+@limiter.limit(
+    "20 per hour",
+    exempt_when=lambda: current_user.is_authenticated and current_user.is_admin,
+)
 def upload_files():
     """Upload and process PDF files - saves files, starts background processing, returns job_id."""
     try:
@@ -445,6 +451,7 @@ def _process_files_background(app, job_id, saved_files, llm_svc, file_svc, pdf_p
 
 
 @upload.route("/upload/progress/<job_id>", methods=["GET"])
+@limiter.limit("600 per minute")
 def get_progress(job_id):
     """Get the processing progress for a job."""
     _cleanup_old_jobs()
@@ -477,6 +484,7 @@ def get_progress(job_id):
 
 
 @upload.route("/download/<path:filepath>")
+@limiter.limit("60 per minute")
 def download_file(filepath):
     """
     Download processed file.

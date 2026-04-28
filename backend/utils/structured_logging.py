@@ -80,3 +80,10 @@ def setup_structured_logging(app) -> None:
         handler = logging.StreamHandler()
         handler.setFormatter(formatter)
         app.logger.addHandler(handler)
+
+    # Gunicorn installs its own handlers on `gunicorn.access`/`gunicorn.error`;
+    # we re-format them so production logs are uniform JSON.
+    for _gunicorn_logger_name in ("gunicorn.error", "gunicorn.access"):
+        _gunicorn_logger = logging.getLogger(_gunicorn_logger_name)
+        for _h in _gunicorn_logger.handlers:
+            _h.setFormatter(formatter)

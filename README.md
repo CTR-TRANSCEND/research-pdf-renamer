@@ -225,6 +225,25 @@ OLLAMA_URL=http://localhost:8000
 
 ## Production Deployment
 
+### Upgrading to v0.3.5
+
+v0.3.5 introduces a non-root container user (`app`, UID 1000). Existing v0.3.4 deployments ran as root, so the Docker named volumes (`pdf-data`, `pdf-uploads`, `pdf-temp`) contain root-owned files that the new `app` user cannot write to without a one-time ownership fix.
+
+**No manual migration is required.** The new entrypoint script (`docker/entrypoint.sh`) handles this automatically:
+
+1. The container starts briefly as root.
+2. The entrypoint `chown`s the three writable volumes to `app:app`.
+3. `gosu` drops privileges and hands off to gunicorn, which runs as UID 1000 for the lifetime of the container.
+
+For fresh deployments the `chown` is a no-op -- volumes are initialized with correct ownership at image build time.
+
+**Verify after upgrade:**
+
+```bash
+docker compose top pdf-renamer
+# The gunicorn process(es) should show UID 1000 in the USER column.
+```
+
 ### Docker
 
 ```bash

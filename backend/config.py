@@ -38,6 +38,10 @@ class Config:
 
     # Use persistent SECRET_KEY (auto-generated and saved on first run)
     SECRET_KEY = _get_or_create_secret_key()
+    # Dedicated JWT signing key — defaults to SECRET_KEY for backward compatibility.
+    # Set JWT_SECRET_KEY env var to a different value so the two keys can be
+    # rotated independently and a leak of one does not compromise the other.
+    JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY") or SECRET_KEY
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
     # Application root for reverse proxy support

@@ -47,7 +47,7 @@ def get_limits():
         token = auth_header[7:]
         try:
             payload = jwt.decode(
-                token, current_app.config["SECRET_KEY"], algorithms=["HS256"]
+                token, current_app.config["JWT_SECRET_KEY"], algorithms=["HS256"]
             )
             user_id = payload.get("user_id")
             if user_id:

@@ -48,7 +48,7 @@ def auth_required(f):
             try:
                 # Decode JWT token with proper expiration verification
                 payload = jwt.decode(
-                    token, current_app.config["SECRET_KEY"], algorithms=["HS256"]
+                    token, current_app.config["JWT_SECRET_KEY"], algorithms=["HS256"]
                 )
                 user_id = payload.get("user_id")
                 logger.debug(
@@ -138,7 +138,7 @@ def generate_token(user):
         "iat": now,  # Issued at time
         "last_activity": now.isoformat(),  # Track last activity
     }
-    return jwt.encode(payload, current_app.config["SECRET_KEY"], algorithm="HS256")
+    return jwt.encode(payload, current_app.config["JWT_SECRET_KEY"], algorithm="HS256")
 
 
 def set_jwt_cookie(response, user):
@@ -192,7 +192,7 @@ def refresh_token_if_needed(token):
         # Decode token WITH expiration verification (security fix)
         payload = jwt.decode(
             token,
-            current_app.config["SECRET_KEY"],
+            current_app.config["JWT_SECRET_KEY"],
             algorithms=["HS256"],
         )
 
@@ -241,7 +241,7 @@ def refresh_token_if_needed(token):
                 "last_activity": now.isoformat(),
             }
             return jwt.encode(
-                new_payload, current_app.config["SECRET_KEY"], algorithm="HS256"
+                new_payload, current_app.config["JWT_SECRET_KEY"], algorithm="HS256"
             )
     except jwt.ExpiredSignatureError:
         logger.debug("Token refresh rejected: token expired")

@@ -350,6 +350,12 @@ def create_app(config_name=None):
         # sure it also carries the request_id filter.
         for _h in app.logger.handlers:
             _h.addFilter(_request_id_filter)
+        # Attach the filter to gunicorn loggers so request_id is available
+        # on access and error lines emitted by the production server.
+        for _gunicorn_logger_name in ("gunicorn.error", "gunicorn.access"):
+            _gunicorn_logger = logging.getLogger(_gunicorn_logger_name)
+            for _h in _gunicorn_logger.handlers:
+                _h.addFilter(_request_id_filter)
 
     @app.after_request
     def _record_request_metrics(response):
@@ -409,7 +415,7 @@ def create_app(config_name=None):
             return None
 
         try:
-            payload = jwt.decode(token, app.config["SECRET_KEY"], algorithms=["HS256"])
+            payload = jwt.decode(token, app.config["JWT_SECRET_KEY"], algorithms=["HS256"])
         except jwt.ExpiredSignatureError:
             g.clear_jwt_cookie = True
             return None
@@ -464,9 +470,10 @@ def create_app(config_name=None):
     app.register_blueprint(auth_blueprint, url_prefix="/api/auth")
     auth_limiter.init_app(app)
 
-    from backend.routes.upload import upload as upload_blueprint
+    from backend.routes.upload import upload as upload_blueprint, limiter as upload_limiter
 
     app.register_blueprint(upload_blueprint, url_prefix="/api")
+    upload_limiter.init_app(app)
 
     from backend.routes.admin import admin as admin_blueprint
 
@@ -607,6 +614,12 @@ def create_app(config_name=None):
             return dict(get_version=lambda: __version__)
         except ImportError:
             return dict(get_version=lambda: "0.2.1")
+
+    if app.config.get("JWT_SECRET_KEY") == app.config.get("SECRET_KEY") and not app.testing:
+        logger.warning(
+            "JWT_SECRET_KEY is not separated from SECRET_KEY. "
+            "Set JWT_SECRET_KEY env var to a different value for defense in depth."
+        )
 
     return app
 

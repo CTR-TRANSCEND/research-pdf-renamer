@@ -13,6 +13,42 @@ from concurrent.futures import ThreadPoolExecutor
 
 logger = logging.getLogger(__name__)
 
+# Module-level counter for cleanup tasks skipped due to a full queue.
+_skipped_cleanup_count = 0
+_skipped_cleanup_lock = threading.Lock()
+
+
+def get_cleanup_stats() -> dict:
+    """Return cleanup queue health statistics.
+
+    Returns:
+        dict with keys:
+            skipped_total   - cumulative count of skipped scheduled cleanups
+            queue_depth     - number of semaphore slots still available
+                             (lower == more tasks queued), or None if unavailable
+            executor_max_workers - max_workers of the shared cleanup executor
+    """
+    global _skipped_cleanup_count
+    with _skipped_cleanup_lock:
+        skipped = _skipped_cleanup_count
+
+    # BoundedSemaphore exposes ._value as the count of available permits.
+    try:
+        queue_depth = FileService._cleanup_semaphore._value
+    except AttributeError:
+        queue_depth = None
+
+    try:
+        max_workers = FileService._cleanup_executor._max_workers
+    except AttributeError:
+        max_workers = None
+
+    return {
+        "skipped_total": skipped,
+        "queue_depth": queue_depth,
+        "executor_max_workers": max_workers,
+    }
+
 
 class FileService:
     # LOG-003: Class-level thread pool for cleanup tasks
@@ -318,6 +354,9 @@ class FileService:
             logger.warning(
                 f"Cleanup queue full, skipping scheduled cleanup for: {filepath}"
             )
+            global _skipped_cleanup_count
+            with _skipped_cleanup_lock:
+                _skipped_cleanup_count += 1
             return
 
         # Submit cleanup task to the shared thread pool with semaphore release wrapper

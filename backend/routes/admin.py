@@ -26,6 +26,16 @@ CACHE_TTL = 300  # 5 minutes
 # PERF-001 FIX: Add threading Lock for thread-safe cache access
 _cache_lock = threading.RLock()  # Use RLock for reentrant locking
 
+# 60-second cache for the LLM connectivity probe performed by system_status().
+# This prevents the admin dashboard from hammering the LLM API on every page
+# load — probing OpenAI's models.list() on each request adds ~200-500 ms of
+# unnecessary latency.  A manual dashboard refresh will hit the LLM only when
+# the cache has expired.  Database, disk, and system fields are NOT cached here
+# because they are cheap local operations.
+_llm_status_cache = {"data": None, "expires_at": 0}
+_llm_status_cache_lock = threading.Lock()
+_LLM_STATUS_CACHE_TTL = 60  # seconds
+
 
 @admin.route("/pending", methods=["GET"])
 @admin_required
@@ -1486,6 +1496,77 @@ def save_api_key():
         return jsonify({"error": "Failed to save API key"}), 500
 
 
+@admin.route("/storage", methods=["GET"])
+@admin_required
+def get_storage_health():
+    """Return disk + cleanup queue health for the admin dashboard."""
+    import os
+    import shutil as _shutil
+    from backend.services.file_service import FileService, get_cleanup_stats
+
+    # --- Disk stats ---
+    total, used, free = _shutil.disk_usage(".")
+    disk = {
+        "used_gb": round(used / (1024**3), 2),
+        "free_gb": round(free / (1024**3), 2),
+        "total_gb": round(total / (1024**3), 2),
+        "usage_percent": round((used / total) * 100, 2),
+    }
+
+    # --- Downloads folder stats (file count only to keep it cheap) ---
+    file_svc = FileService()
+    downloads_path = os.path.join(file_svc.upload_folder, "downloads")
+    try:
+        if os.path.isdir(downloads_path):
+            # Count all files recursively but avoid slow os.walk on huge trees;
+            # use os.scandir one level deep (session sub-dirs) for speed.
+            file_count = 0
+            total_bytes = 0
+            for entry in os.scandir(downloads_path):
+                if entry.is_dir(follow_symlinks=False):
+                    for sub in os.scandir(entry.path):
+                        if sub.is_file(follow_symlinks=False):
+                            file_count += 1
+                            try:
+                                total_bytes += sub.stat().st_size
+                            except OSError:
+                                pass
+                elif entry.is_file(follow_symlinks=False):
+                    file_count += 1
+                    try:
+                        total_bytes += entry.stat().st_size
+                    except OSError:
+                        pass
+            downloads = {
+                "size_mb": round(total_bytes / (1024**2), 2),
+                "file_count": file_count,
+            }
+        else:
+            downloads = {"size_mb": 0.0, "file_count": 0}
+    except Exception as e:
+        logger.warning(f"Could not read downloads folder stats: {e}")
+        downloads = {"size_mb": None, "file_count": None}
+
+    # --- Cleanup queue stats ---
+    cleanup = get_cleanup_stats()
+
+    # --- PDF extraction health (optional — works even if pdf_processor not merged) ---
+    try:
+        from backend.services.pdf_processor import get_extraction_health
+        pdf_extraction = get_extraction_health()
+    except ImportError:
+        pdf_extraction = {}
+
+    return jsonify(
+        {
+            "disk": disk,
+            "downloads": downloads,
+            "cleanup": cleanup,
+            "pdf_extraction": pdf_extraction,
+        }
+    )
+
+
 @admin.route("/system-status")
 @admin_required
 def system_status():
@@ -1506,71 +1587,96 @@ def system_status():
         db_error = "Database connection failed"
         logger.error(f"Database health check failed: {e}")
 
-    # LLM service status
+    # LLM service status — served from a 60-second cache to avoid hammering
+    # the LLM API (e.g. OpenAI models.list()) on every admin dashboard load.
     llm_status = "unknown"
     llm_error = None
     provider = "unknown"
     model = "Not configured"
 
-    try:
-        from flask import current_app
+    # Check cache first (fast path, no I/O).
+    with _llm_status_cache_lock:
+        _cached = _llm_status_cache.get("data")
+        _cache_valid = _llm_status_cache["expires_at"] > time.time()
 
-        config = current_app.config
-        from backend.services import LLMService
-        from backend.models import SystemSettings
-        import os
+    if _cached is not None and _cache_valid:
+        # Cache hit — unpack all llm_* fields from the cached snapshot.
+        llm_status = _cached["llm_status"]
+        llm_error = _cached["llm_error"]
+        provider = _cached["provider"]
+        model = _cached["model"]
+    else:
+        # Cache miss (first call or TTL expired) — run the full probe.
+        try:
+            from flask import current_app
 
-        # Check if API key is available (priority: environment variable > database)
-        provider = config.get("LLM_PROVIDER", "openai")
-        model = config.get("LLM_MODEL", "Not configured")
+            config = current_app.config
+            from backend.services import LLMService
+            from backend.models import SystemSettings
+            import os
 
-        # Providers that don't require an API key (local/self-hosted)
-        optional_key_providers = ["ollama", "openai-compatible", "lm-studio"]
+            # Check if API key is available (priority: environment variable > database)
+            provider = config.get("LLM_PROVIDER", "openai")
+            model = config.get("LLM_MODEL", "Not configured")
 
-        if provider in optional_key_providers:
-            # These providers don't require an API key — mark healthy
-            llm_status = "healthy"
-        else:
-            env_var_map = {
-                "openai": "OPENAI_API_KEY",
-                "anthropic": "ANTHROPIC_API_KEY",
-                "cohere": "COHERE_API_KEY",
-                "google": "GOOGLE_API_KEY",
-            }
+            # Providers that don't require an API key (local/self-hosted)
+            optional_key_providers = ["ollama", "openai-compatible", "lm-studio"]
 
-            env_var = env_var_map.get(provider)
-            has_env_key = env_var and os.environ.get(env_var)
-
-            if has_env_key:
-                # API key loaded from environment (preferred method)
-                llm_service = LLMService(config)
-                # Test connection (for OpenAI)
-                if llm_service.provider == "openai":
-                    llm_service.client.models.list()
+            if provider in optional_key_providers:
+                # These providers don't require an API key — mark healthy
                 llm_status = "healthy"
-            elif SystemSettings.has_api_key(provider):
-                # Check database for legacy API key
-                try:
-                    api_key = SystemSettings.get_api_key(provider)
-                    if api_key:
-                        llm_service = LLMService(config)
-                        # Test connection (for OpenAI)
-                        if llm_service.provider == "openai":
-                            llm_service.client.models.list()
-                        llm_status = "healthy"
-                    else:
-                        llm_status = "error"
-                        llm_error = f"API key exists in database but cannot be decrypted. Please set the {provider.upper()} API key via LLM Settings to use environment variables (recommended)."
-                except Exception as key_error:
-                    llm_status = "error"
-                    llm_error = f"API key decryption failed: {str(key_error)}. Please set the {provider.upper()} API key via LLM Settings to use environment variables (recommended)."
             else:
-                llm_status = "error"
-                env_label = env_var or f"{provider.upper()}_API_KEY"
-                llm_error = f"API key not configured. Please set {env_label} environment variable or use LLM Settings."
-    except Exception as e:
-        llm_status = "error"
-        llm_error = str(e)
+                env_var_map = {
+                    "openai": "OPENAI_API_KEY",
+                    "anthropic": "ANTHROPIC_API_KEY",
+                    "cohere": "COHERE_API_KEY",
+                    "google": "GOOGLE_API_KEY",
+                }
+
+                env_var = env_var_map.get(provider)
+                has_env_key = env_var and os.environ.get(env_var)
+
+                if has_env_key:
+                    # API key loaded from environment (preferred method)
+                    llm_service = LLMService(config)
+                    # Test connection (for OpenAI)
+                    if llm_service.provider == "openai":
+                        llm_service.client.models.list()
+                    llm_status = "healthy"
+                elif SystemSettings.has_api_key(provider):
+                    # Check database for legacy API key
+                    try:
+                        api_key = SystemSettings.get_api_key(provider)
+                        if api_key:
+                            llm_service = LLMService(config)
+                            # Test connection (for OpenAI)
+                            if llm_service.provider == "openai":
+                                llm_service.client.models.list()
+                            llm_status = "healthy"
+                        else:
+                            llm_status = "error"
+                            llm_error = f"API key exists in database but cannot be decrypted. Please set the {provider.upper()} API key via LLM Settings to use environment variables (recommended)."
+                    except Exception as key_error:
+                        llm_status = "error"
+                        llm_error = f"API key decryption failed: {str(key_error)}. Please set the {provider.upper()} API key via LLM Settings to use environment variables (recommended)."
+                else:
+                    llm_status = "error"
+                    env_label = env_var or f"{provider.upper()}_API_KEY"
+                    llm_error = f"API key not configured. Please set {env_label} environment variable or use LLM Settings."
+        except Exception as e:
+            llm_status = "error"
+            llm_error = str(e)
+
+        # Store all llm_* fields (including provider and model) in the cache so
+        # that a cache hit returns exactly the same shape as a cache miss.
+        with _llm_status_cache_lock:
+            _llm_status_cache["data"] = {
+                "llm_status": llm_status,
+                "llm_error": llm_error,
+                "provider": provider,
+                "model": model,
+            }
+            _llm_status_cache["expires_at"] = time.time() + _LLM_STATUS_CACHE_TTL
 
     # Storage status
     storage_status = "unknown"
