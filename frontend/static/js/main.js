@@ -1266,6 +1266,14 @@ function closeRegisterModal() {
     document.getElementById('register-form').reset();
 }
 
+function showRegistrationSuccessModal() {
+    document.getElementById('registration-success-modal').classList.remove('hidden');
+}
+
+function closeRegistrationSuccessModal() {
+    document.getElementById('registration-success-modal').classList.add('hidden');
+}
+
 // Show folder restriction modal
 function showFolderRestrictionModal() {
     document.getElementById('folder-restriction-modal').classList.remove('hidden');
@@ -1357,17 +1365,8 @@ async function handleRegister(event) {
             password_confirm: confirmPassword
         });
 
-        // JWT token is now stored in HttpOnly cookie (not localStorage) for XSS protection
-        // Cookie is automatically sent with requests, no manual token handling needed
-
-        // Update UI
-        updateAuthUI(response.data.user);
-        showToast(response.data.message, 'success');
         closeRegisterModal();
-
-        // Reload limits and auth status
-        checkAuthStatus();
-        loadUserLimits();
+        showRegistrationSuccessModal();
 
     } catch (error) {
         const errorMsg = error.response?.data?.error || 'Registration failed';

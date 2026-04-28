@@ -130,7 +130,7 @@ class PDFProcessor:
         self._cache_max_size = 50
 
         # Optimization settings
-        self.max_pages_to_process = 3  # Only process first 3 pages max
+        self.max_pages_to_process = 2  # Only process first 2 pages max
 
     def extract_text_from_pdf(self, pdf_path: str) -> Tuple[str, int]:
         """

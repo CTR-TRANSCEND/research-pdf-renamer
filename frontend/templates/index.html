@@ -102,7 +102,7 @@
                     <i class="fas fa-shield-alt text-green-600 mt-1 mr-3"></i>
                     <div>
                         <h3 class="font-semibold">Privacy First</h3>
-                        <p class="text-sm text-gray-600">Only text from first 1-2 pages is processed</p>
+                        <p class="text-sm text-gray-600">Only text from first 2 pages is processed</p>
                     </div>
                 </div>
                 <div class="flex items-start">
@@ -339,6 +339,31 @@
         <button onclick="logout()" class="w-full text-left px-2 py-2 text-sm text-red-600 hover:bg-red-50 rounded">
             <i class="fas fa-sign-out-alt mr-2"></i>Logout
         </button>
+    </div>
+</div>
+
+<!-- Registration Success Modal -->
+<div id="registration-success-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-40" role="dialog" aria-modal="true" aria-labelledby="registration-success-title">
+    <div class="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
+        <div class="p-8 text-center">
+            <div class="flex items-center justify-center w-20 h-20 bg-green-100 rounded-full mx-auto mb-6">
+                <i class="fas fa-check-circle text-green-500 text-5xl"></i>
+            </div>
+            <h2 id="registration-success-title" class="text-2xl font-bold text-gray-900 mb-3">Registration Complete!</h2>
+            <p class="text-gray-600 mb-2">Your account has been created successfully.</p>
+            <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6 text-left">
+                <div class="flex items-start gap-3">
+                    <i class="fas fa-clock text-yellow-500 mt-0.5 flex-shrink-0"></i>
+                    <div>
+                        <p class="font-semibold text-yellow-800 text-sm">Pending Admin Approval</p>
+                        <p class="text-yellow-700 text-sm mt-1">Your account is awaiting admin approval. You'll be able to log in once it has been approved.</p>
+                    </div>
+                </div>
+            </div>
+            <button onclick="closeRegistrationSuccessModal()" class="w-full bg-indigo-600 text-white py-2 px-4 rounded-lg hover:bg-indigo-700 transition font-semibold">
+                Got it
+            </button>
+        </div>
     </div>
 </div>
 
