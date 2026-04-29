@@ -10,6 +10,7 @@ from backend.utils.auth import auth_required
 from werkzeug.exceptions import RequestEntityTooLarge
 from werkzeug.utils import secure_filename
 import copy
+import hashlib
 import os
 import logging
 import time
@@ -17,6 +18,10 @@ import secrets
 import threading
 from datetime import datetime, timedelta, timezone
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
+
+def _text_hash(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8", errors="replace")).hexdigest()
 
 upload = Blueprint("upload", __name__)
 logger = logging.getLogger(__name__)
@@ -353,13 +358,74 @@ def _process_files_background(app, job_id, saved_files, llm_svc, file_svc, pdf_p
                 pass
             return ("error", None, f"{path}: Processing error - {str(e)}")
 
+    # Part A: Detect true duplicates (same content, different filenames)
+    duplicate_filepaths = set()
+    duplicate_results = []
+
+    # Group by file size first (cheap filter before hashing)
+    size_groups = {}
+    for sf in saved_files:
+        try:
+            sz = os.path.getsize(sf["filepath"])
+        except OSError:
+            sz = -1
+        size_groups.setdefault(sz, []).append(sf)
+
+    for sz, group in size_groups.items():
+        if len(group) < 2:
+            continue
+        # Hash the extracted text for each file in this size group
+        hash_groups = {}
+        for sf in group:
+            try:
+                text, _ = pdf_proc.extract_text_from_pdf(sf["filepath"])
+                h = _text_hash(text) if text else None
+            except Exception:
+                h = None
+            if h is None:
+                continue
+            hash_groups.setdefault(h, []).append(sf)
+
+        for h, hgroup in hash_groups.items():
+            if len(hgroup) < 2:
+                continue
+            # First file is canonical; the rest are duplicates
+            canonical = hgroup[0]
+            for dup in hgroup[1:]:
+                duplicate_filepaths.add(dup["filepath"])
+                # Clean up temp file
+                try:
+                    file_svc.cleanup_file(dup["filepath"])
+                except Exception:
+                    pass
+                # Update job progress entry for this duplicate
+                with _job_progress_lock:
+                    job = _job_progress.get(job_id)
+                    if job:
+                        job["files"][dup["index"]] = {
+                            "status": "duplicate",
+                            "duplicate_of": canonical["original_filename"],
+                            "name": dup["path"],
+                        }
+                # Collect result for final output
+                duplicate_results.append({
+                    "original_name": dup["path"],
+                    "original_filename": dup["original_filename"],
+                    "status": "duplicate",
+                    "duplicate_of": canonical["original_filename"],
+                    "note": f"Duplicate of '{canonical['original_filename']}' — processed once",
+                })
+
+    # Only submit non-duplicate files to the executor
+    files_to_process = [sf for sf in saved_files if sf["filepath"] not in duplicate_filepaths]
+
     # Process files using ThreadPoolExecutor within this background thread
     # Stagger submissions by 0.5s to avoid overwhelming the LLM server
     with ThreadPoolExecutor(max_workers=MAX_WORKERS, thread_name_prefix="bg_processor") as executor:
         future_to_info = {}
-        for i, sf in enumerate(saved_files):
+        for i, sf in enumerate(files_to_process):
             future_to_info[executor.submit(process_single_file, sf)] = sf
-            if i < len(saved_files) - 1:
+            if i < len(files_to_process) - 1:
                 time.sleep(1.0)
 
         for future in as_completed(future_to_info):
@@ -394,6 +460,51 @@ def _process_files_background(app, job_id, saved_files, llm_svc, file_svc, pdf_p
                 else:
                     errors.append(error_msg)
                     job["errors"].append(error_msg)
+
+    # Part B: Resolve output name collisions
+    seen_names = {}
+    for result in processed_files:
+        name = result["new_name"]
+        if name not in seen_names:
+            seen_names[name] = result
+        else:
+            # Collision: append original stem to disambiguate
+            stem = os.path.splitext(name)[0]
+            original_stem = os.path.splitext(result["original_filename"])[0]
+            separator = "" if stem.endswith("__") else "__"
+            new_name = f"{stem}{separator}{original_stem}.pdf"
+            # Rename the actual file on disk
+            old_full_path = os.path.join(
+                file_svc.upload_folder, "downloads", result["download_path"]
+            )
+            new_full_path = os.path.join(
+                os.path.dirname(old_full_path), new_name
+            )
+            try:
+                os.rename(old_full_path, new_full_path)
+                # Update download_path to reflect the new filename
+                result["download_path"] = os.path.join(
+                    os.path.dirname(result["download_path"]), new_name
+                )
+            except Exception:
+                pass
+            result["new_name"] = new_name
+            result["renamed_collision"] = True
+            result["rename_note"] = (
+                f"Renamed to avoid conflict with '{seen_names[name]['original_filename']}'"
+            )
+            # Register the new name so further collisions chain correctly
+            seen_names[new_name] = result
+            # Update the corresponding job["files"] entry
+            with _job_progress_lock:
+                job = _job_progress.get(job_id)
+                if job:
+                    for f in job["files"]:
+                        if f.get("name") == result["original_name"]:
+                            f["new_name"] = new_name
+                            f["renamed_collision"] = True
+                            f["rename_note"] = result["rename_note"]
+                            break
 
     # All files processed - finalize
     with app.app_context():
@@ -461,7 +572,7 @@ def _process_files_background(app, job_id, saved_files, llm_svc, file_svc, pdf_p
             job["download_url"] = download_url
             job["elapsed_seconds"] = round(time.time() - job["start_time"], 1)
             # Store processed file details for the final response
-            job["processed_files"] = processed_files
+            job["processed_files"] = processed_files + duplicate_results
 
 
 @upload.route("/upload/progress/<job_id>", methods=["GET"])
