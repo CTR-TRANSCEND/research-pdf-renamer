@@ -605,11 +605,16 @@ function startProgressPolling(jobId, filesToProcess, totalFiles) {
                         updateFileProgress(fileStatus.name, 'Retrying AI analysis...', 50);
                     } else if (fileStatus.status === 'renaming') {
                         updateFileProgress(fileStatus.name, 'Renaming...', 80);
+                    } else if (fileStatus.status === 'duplicate') {
+                        updateFileProgress(fileStatus.name, `Duplicate — skipped (copy of: ${fileStatus.duplicate_of})`, 100, 'warning');
                     } else if (fileStatus.status === 'complete') {
-                        const displayText = fileStatus.new_name
-                            ? `Done: ${fileStatus.new_name}`
-                            : 'Complete';
-                        updateFileProgress(fileStatus.name, displayText, 100, 'success');
+                        let displayText = fileStatus.new_name ? `Done: ${fileStatus.new_name}` : 'Complete';
+                        let displayType = 'success';
+                        if (fileStatus.renamed_collision) {
+                            displayText = `Renamed: ${fileStatus.new_name} (${fileStatus.rename_note})`;
+                            displayType = 'warning';
+                        }
+                        updateFileProgress(fileStatus.name, displayText, 100, displayType);
                     } else if (fileStatus.status === 'error') {
                         const errText = fileStatus.error
                             ? fileStatus.error.split(':').slice(1).join(':').trim() || 'Failed'
@@ -635,14 +640,24 @@ function startProgressPolling(jobId, filesToProcess, totalFiles) {
 
                 // Populate files from progress
                 if (progress.processed_files && progress.processed_files.length > 0) {
-                    if (progress.processed_files.length === 1) {
-                        resultData.file = progress.processed_files[0];
+                    const successFiles = progress.processed_files.filter(f => f.status !== 'duplicate');
+                    const duplicateFiles = progress.processed_files.filter(f => f.status === 'duplicate');
+                    const collisionFiles = successFiles.filter(f => f.renamed_collision === true);
+
+                    if (successFiles.length === 1) {
+                        resultData.file = successFiles[0];
+                    } else if (successFiles.length > 1) {
+                        resultData.files = successFiles;
                     } else {
-                        resultData.files = progress.processed_files;
+                        resultData.files = [];
                     }
-                    resultData.message = `Successfully processed ${progress.processed_files.length} files`;
+                    resultData.message = `Successfully processed ${successFiles.length} files`;
+                    resultData._duplicateFiles = duplicateFiles;
+                    resultData._collisionFiles = collisionFiles;
                 } else {
                     resultData.files = [];
+                    resultData._duplicateFiles = [];
+                    resultData._collisionFiles = [];
                 }
 
                 // Store failed file objects for retry
@@ -664,6 +679,7 @@ function startProgressPolling(jobId, filesToProcess, totalFiles) {
 
                 setTimeout(() => {
                     showResultsInModal(resultData, totalFiles);
+                    appendDuplicateNotices(resultData._duplicateFiles || [], resultData._collisionFiles || []);
                     if (resultData.download_url) {
                         setTimeout(() => {
                             triggerDownload(resultData.download_url);
@@ -958,6 +974,30 @@ function showResultsInModal(data, totalSubmitted = 1) {
     }
 }
 
+// Append duplicate and collision-rename notices to the results content area
+function appendDuplicateNotices(duplicates, collisions) {
+    const content = document.getElementById('results-content');
+    if (!content) return;
+    let html = '';
+    if (duplicates.length > 0) {
+        html += `<div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mt-4">
+            <h3 class="font-semibold text-yellow-800 mb-2"><i class="fas fa-copy mr-1"></i>Duplicate Files Detected (${duplicates.length} skipped)</h3>
+            <ul class="text-sm text-yellow-700 space-y-1">
+                ${duplicates.map(d => `<li>&bull; <strong>${escapeHtml(d.original_filename)}</strong> — ${escapeHtml(d.note)}</li>`).join('')}
+            </ul>
+        </div>`;
+    }
+    if (collisions.length > 0) {
+        html += `<div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mt-4">
+            <h3 class="font-semibold text-blue-800 mb-2"><i class="fas fa-info-circle mr-1"></i>Files Renamed to Avoid Conflicts (${collisions.length})</h3>
+            <ul class="text-sm text-blue-700 space-y-1">
+                ${collisions.map(c => `<li>&bull; <strong>${escapeHtml(c.original_filename)}</strong> → <code>${escapeHtml(c.new_name)}</code> — ${escapeHtml(c.rename_note)}</li>`).join('')}
+            </ul>
+        </div>`;
+    }
+    if (html) content.insertAdjacentHTML('beforeend', html);
+}
+
 // Show error in modal
 function showErrorInModal(errorMsg, details) {
     const processingState = document.getElementById('processing-state');
@@ -1103,6 +1143,12 @@ function updateFileProgress(fileName, status, percent, type = 'success') {
         statusText.className = 'text-xs text-red-600 status-text';
         if (fileIcon) {
             fileIcon.className = 'fas fa-times-circle text-red-600 mr-3 file-icon';
+        }
+    } else if (type === 'warning') {
+        progressFill.className = 'progress-fill bg-yellow-500 h-2 rounded-full';
+        statusText.className = 'text-xs text-yellow-700 status-text';
+        if (fileIcon) {
+            fileIcon.className = 'fas fa-exclamation-circle text-yellow-600 mr-3 file-icon';
         }
     } else if (percent === 100 && type === 'success') {
         progressFill.className = 'progress-fill bg-green-600 h-2 rounded-full';
