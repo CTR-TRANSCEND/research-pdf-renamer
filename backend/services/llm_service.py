@@ -54,10 +54,11 @@ class PaperMetadata(BaseModel):
         return v
     suggested_filename: str = Field(..., min_length=1, description="Generated filename")
 
-    @field_validator("year")
+    @field_validator("year", mode="before")
     @classmethod
-    def validate_year(cls, v: str) -> str:
-        """Ensure year is a valid 4-digit year."""
+    def validate_year(cls, v) -> str:
+        """Ensure year is a valid 4-digit year. Coerce int to str (LLMs often omit quotes)."""
+        v = str(v).strip()
         if not v.isdigit():
             raise ValueError("Year must be numeric")
         year_int = int(v)
