@@ -509,7 +509,26 @@ async function processFiles() {
 
         // Provide user-friendly messages for common HTTP errors
         if (error.response?.status === 413) {
-            errorMsg = 'Upload too large. Please reduce the number of files or use smaller PDFs.';
+            const limitMb = error.response?.data?.limit_mb || 500;
+            const totalBytes = filesToProcess.reduce((sum, f) => sum + (f.size || (f.file && f.file.size) || 0), 0);
+            const totalMb = (totalBytes / (1024 * 1024)).toFixed(1);
+            errorMsg = error.response?.data?.error ||
+                `Upload too large (${totalMb} MB). Maximum allowed per submission is ${limitMb} MB.`;
+            if (!error.response?.data?.details) {
+                const fileDetails = filesToProcess.map(f => {
+                    const name = f.name || (f.file && f.file.name) || f.path || 'unknown';
+                    const sizeMb = ((f.size || (f.file && f.file.size) || 0) / (1024 * 1024)).toFixed(1);
+                    return `${name} (${sizeMb} MB)`;
+                });
+                error.response = error.response || {};
+                error.response.data = error.response.data || {};
+                error.response.data.details = [
+                    `Total upload size: ${totalMb} MB (limit: ${limitMb} MB)`,
+                    `Files selected: ${filesToProcess.length}`,
+                    ...fileDetails,
+                    `Try splitting into smaller batches under ${limitMb} MB total.`
+                ];
+            }
         } else if (error.response?.status === 429) {
             errorMsg = 'Rate limit exceeded. Please wait a moment and try again.';
         } else if (error.response?.status === 504 || error.code === 'ECONNABORTED') {

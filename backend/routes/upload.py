@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify, send_file
+from flask import Blueprint, current_app, request, jsonify, send_file
 from flask_login import current_user
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -241,9 +241,18 @@ def upload_files():
         return jsonify({"job_id": job_id, "total": total_files + len(save_errors)})
 
     except RequestEntityTooLarge:
-        return jsonify(
-            {"error": "Upload too large. Please reduce the total file size and try again."}
-        ), 413
+        limit_mb = current_app.config.get("MAX_CONTENT_LENGTH", 500 * 1024 * 1024) // (1024 * 1024)
+        received_mb = round((request.content_length or 0) / (1024 * 1024), 1)
+        return jsonify({
+            "error": f"Upload too large ({received_mb} MB). Maximum allowed per submission is {limit_mb} MB.",
+            "limit_mb": limit_mb,
+            "received_mb": received_mb,
+            "details": [
+                f"Your upload was {received_mb} MB, which exceeds the {limit_mb} MB limit.",
+                "Try splitting your files into smaller batches.",
+                f"Each batch must be under {limit_mb} MB total."
+            ]
+        }), 413
     except Exception as e:
         logger.error(f"Upload processing failed: {type(e).__name__}: {str(e)}", exc_info=True)
         return jsonify(
