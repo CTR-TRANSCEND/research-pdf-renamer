@@ -89,8 +89,8 @@ class Config:
     SESSION_COOKIE_SAMESITE = "Lax"  # Allow cookies for top-level navigations
     REMEMBER_COOKIE_SAMESITE = "Lax"
 
-    # Upload size limit (50MB per request body, enforced at the WSGI layer)
-    MAX_CONTENT_LENGTH = int(os.environ.get("MAX_CONTENT_LENGTH", 50 * 1024 * 1024))
+    # Upload size limit (500MB per request body, enforced at the WSGI layer)
+    MAX_CONTENT_LENGTH = int(os.environ.get("MAX_CONTENT_LENGTH", 500 * 1024 * 1024))
 
     # LLM settings
     # Default to Ollama (local LLM) - can be overridden by environment variables or database settings

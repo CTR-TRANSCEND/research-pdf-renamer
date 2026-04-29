@@ -7,6 +7,7 @@ from backend.database import db
 from backend.services import PDFProcessor, LLMService, FileService
 from backend.utils.decorators import record_usage
 from backend.utils.auth import auth_required
+from werkzeug.exceptions import RequestEntityTooLarge
 from werkzeug.utils import secure_filename
 import copy
 import os
@@ -239,6 +240,10 @@ def upload_files():
 
         return jsonify({"job_id": job_id, "total": total_files + len(save_errors)})
 
+    except RequestEntityTooLarge:
+        return jsonify(
+            {"error": "Upload too large. Please reduce the total file size and try again."}
+        ), 413
     except Exception as e:
         logger.error(f"Upload processing failed: {type(e).__name__}: {str(e)}", exc_info=True)
         return jsonify(
