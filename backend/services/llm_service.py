@@ -84,8 +84,8 @@ class PaperMetadata(BaseModel):
         return v
 
     model_config = ConfigDict(
-        strict=True,  # Strict validation - no extra fields allowed
-        extra="forbid",  # Reject responses with extra fields
+        strict=True,  # Strict type validation for declared fields
+        extra="ignore",  # Silently drop extra fields — LLMs often return doi, abstract, etc.
     )
 
 

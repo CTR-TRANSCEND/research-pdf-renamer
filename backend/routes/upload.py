@@ -195,8 +195,15 @@ def upload_files():
             return jsonify({"error": "No files were saved successfully", "details": save_errors}), 400
 
         # Initialize job progress
+        # IMPORTANT: Reassign sf["index"] to the position in file_statuses (0-based)
+        # so that background-thread status updates target the correct slot.
+        # sf["index"] was previously the original upload enumeration index, which
+        # diverges from the file_statuses position whenever save errors occur
+        # (e.g. file 0 saves OK, file 1 fails → saved_files has index 0 and 2,
+        # but file_statuses slots are 0 and 1 — off-by-one for the third file).
         file_statuses = []
-        for sf in saved_files:
+        for status_idx, sf in enumerate(saved_files):
+            sf["index"] = status_idx  # rebind to actual file_statuses slot
             file_statuses.append({
                 "name": sf["path"],
                 "status": "pending",

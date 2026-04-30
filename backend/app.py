@@ -265,12 +265,20 @@ def create_app(config_name=None):
             )
             _storage_url = "memory://"
 
+    # Exempt the health-check endpoint from rate limiting.
+    # Docker's internal health probe runs every 30 s (≈120/hr) from 127.0.0.1
+    # which would exceed the default 50/hr limit, causing the container to be
+    # marked unhealthy even when the app is perfectly fine.
+    def _rate_limit_exempt():
+        return request.endpoint == "main.health_check"
+
     limiter = Limiter(
         app=app,
         key_func=get_remote_address,
         default_limits=["200 per day", "50 per hour"],
         storage_uri=_storage_url,
         strategy="fixed-window",
+        exempt_when=_rate_limit_exempt,
     )
 
     # PERF-001: Export limiter for use in blueprints
