@@ -397,6 +397,15 @@ git push origin v0.3.0
 | `GET/POST` | `/api/admin/llm-settings` | LLM configuration (admin) |
 | `GET` | `/api/admin/system-status` | System health (admin) |
 
+## Acknowledgments
+
+This work is supported by:
+
+- **[TRANSCEND RDCDC](https://med.und.edu/research/transcend/index.html)** — supported by the National Institute of General Medical Sciences of the National Institutes of Health under Award Number **P20GM155890**
+- **Host-Pathogen Interactions COBRE** — supported by the National Institute of General Medical Sciences of the National Institutes of Health under Award Number **P20GM113123**
+
+The content is solely the responsibility of the authors and does not necessarily represent the official views of the National Institutes of Health.
+
 ## License
 
 MIT License. See [LICENSE](LICENSE) for details.
