@@ -101,7 +101,7 @@ cd research-pdf-renamer
 ./start.sh
 ```
 
-On first startup with no existing users, the app auto-creates an admin account and prints the credentials to the console.
+On first startup with no existing users, the app auto-creates an admin account and writes the generated password to `instance/.admin_initial_password` (readable only by the file owner). Read that file once to get the password, then log in and change it.
 
 Access the application at http://localhost:5000
 
