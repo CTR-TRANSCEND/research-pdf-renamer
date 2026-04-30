@@ -275,6 +275,14 @@ class PDFProcessor:
         try:
             doc = pymupdf.open(pdf_path)
             try:
+                # Prepend PDF standard metadata as a structured header.
+                # Publishers like Elsevier store journal name and publication year
+                # in the PDF metadata (subject/title fields) rather than in the
+                # main content stream, so page.get_text() misses them entirely.
+                meta_header = self._build_metadata_header(doc.metadata)
+                if meta_header:
+                    text = meta_header + "\n\n"
+
                 max_pages = min(self.max_pages_to_process, len(doc))
 
                 for i in range(max_pages):
@@ -306,6 +314,32 @@ class PDFProcessor:
             text = self._clean_text(text)
 
         return text, pages_processed
+
+    def _build_metadata_header(self, metadata: Optional[Dict[str, Any]]) -> str:
+        """
+        Build a plain-text header from PDF standard metadata so the LLM sees
+        journal name and year even when they are absent from the page text stream
+        (common in Elsevier and other publisher PDFs).
+        """
+        if not metadata:
+            return ""
+        parts = []
+        if metadata.get("title"):
+            parts.append(f"Title: {metadata['title']}")
+        if metadata.get("author"):
+            parts.append(f"Author: {metadata['author']}")
+        # 'subject' in Elsevier PDFs: "Neurobiology of Disease, 200 (2024) 106638. doi:..."
+        if metadata.get("subject"):
+            parts.append(f"Source: {metadata['subject']}")
+        if metadata.get("keywords"):
+            parts.append(f"Keywords: {metadata['keywords']}")
+        # creationDate format: D:YYYYMMDDHHmmss...
+        creation = metadata.get("creationDate", "")
+        if len(creation) >= 6 and creation.startswith("D:") and creation[2:6].isdigit():
+            parts.append(f"Publication year: {creation[2:6]}")
+        if not parts:
+            return ""
+        return "--- Document Metadata ---\n" + "\n".join(parts)
 
     def _get_file_hash(self, pdf_path: str) -> str:
         """Calculate SHA256 hash of PDF file for caching."""

@@ -679,27 +679,42 @@ def _fetch_models_from_openai_compatible(ollama_url, headers, timeout=10):
                 if model_name:
                     models.append(model_name)
 
-        # Get loaded models from /models/status endpoint for LocalLLM
+        # Try to detect which models are currently loaded.
+        # Strategy 1: LM Studio native API (/api/v0/models) — includes state per model
         loaded_models = []
         try:
-            status_response = requests.get(
-                f"{ollama_url}/models/status", headers=headers, timeout=5
+            lms_response = requests.get(
+                f"{ollama_url}/api/v0/models", headers=headers, timeout=5
             )
-            if status_response.status_code == 200:
-                status_data = status_response.json()
-                if "loaded" in status_data:
-                    for model in status_data["loaded"]:
-                        # Add the base model name for matching
-                        name = model.get("name", "")
-                        if name:
-                            loaded_models.append(name)
-                        # Also add the ollama_name if different (for matching with /v1/models)
-                        ollama_name = model.get("ollama_name", "")
-                        if ollama_name and ollama_name not in loaded_models:
-                            loaded_models.append(ollama_name)
-                logger.info(f"Loaded models from /models/status: {loaded_models}")
+            if lms_response.status_code == 200:
+                lms_data = lms_response.json()
+                for model in lms_data.get("data", []):
+                    model_id = model.get("id", "")
+                    if model_id and model.get("state") == "loaded":
+                        loaded_models.append(model_id)
+                logger.info(f"Loaded models from /api/v0/models: {loaded_models}")
         except Exception as e:
-            logger.info(f"Failed to get loaded models from /models/status: {e}")
+            logger.info(f"/api/v0/models not available: {e}")
+
+        # Strategy 2: LocalLLM /models/status fallback (if strategy 1 found nothing)
+        if not loaded_models:
+            try:
+                status_response = requests.get(
+                    f"{ollama_url}/models/status", headers=headers, timeout=5
+                )
+                if status_response.status_code == 200:
+                    status_data = status_response.json()
+                    if "loaded" in status_data:
+                        for model in status_data["loaded"]:
+                            name = model.get("name", "")
+                            if name:
+                                loaded_models.append(name)
+                            ollama_name = model.get("ollama_name", "")
+                            if ollama_name and ollama_name not in loaded_models:
+                                loaded_models.append(ollama_name)
+                    logger.info(f"Loaded models from /models/status: {loaded_models}")
+            except Exception as e:
+                logger.info(f"Failed to get loaded models from /models/status: {e}")
 
         return models, loaded_models
     except Exception as e:

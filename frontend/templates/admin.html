@@ -1131,13 +1131,15 @@
                 // Update message based on provider
                 let successMessage;
                 if (providerValue === 'lm-studio') {
-                    const lmStudioData = response.data.available_providers['lm-studio'];
+                    const lmStudioData = (response.data.available_providers || {})['lm-studio'] || {};
                     const jitMode = lmStudioData.jit_mode !== false;
                     if (jitMode) {
                         successMessage = `Found ${allModels.length} models (JIT loading enabled)`;
                     } else {
                         successMessage = `Found ${loadedModels.length} loaded models (${allModels.length} total)`;
                     }
+                } else if (providerValue === 'openai-compatible') {
+                    successMessage = `Found ${allModels.length} available models`;
                 } else {
                     successMessage = `Found ${loadedCount} loaded models (${allModels.length} total on server)`;
                 }
@@ -1161,9 +1163,10 @@
                     const modelItem = document.createElement('div');
                     modelItem.className = 'flex items-center p-2 bg-white border border-gray-200 rounded-lg hover:bg-indigo-50 transition';
 
-                    // For LM Studio, show "Ready" for loaded models instead of "Loaded"
-                    const statusText = providerValue === 'lm-studio' ? 'Ready' : 'Loaded';
-                    const statusIcon = providerValue === 'lm-studio' ? 'fa-check-circle' : 'fa-cube';
+                    // For LM Studio / OpenAI-compatible, show "Ready" instead of "Loaded"
+                    const isLmType = providerValue === 'lm-studio' || providerValue === 'openai-compatible';
+                    const statusText = isLmType ? 'Ready' : 'Loaded';
+                    const statusIcon = isLmType ? 'fa-check-circle' : 'fa-cube';
                     const colorClass = isLoaded ? 'text-green-600' : 'text-gray-400';
 
                     modelItem.innerHTML = `
@@ -1184,7 +1187,7 @@
 
                 if (selectedProvider === 'lm-studio') {
                     // LM Studio: Handle JIT loading state
-                    const lmStudioData = response.data.available_providers['lm-studio'];
+                    const lmStudioData = (response.data.available_providers || {})['lm-studio'] || {};
                     const allModels = lmStudioData.models || [];
                     const loadedModels = lmStudioData.loaded_models || [];
                     const jitMode = lmStudioData.jit_mode !== false;  // Default to JIT mode
@@ -1220,16 +1223,31 @@
                             modelHelpText.textContent = `Select your LM Studio model (${loadedModels.length} loaded, ${allModels.length} total)`;
                         }
                     }
+                } else if (selectedProvider === 'openai-compatible') {
+                    // OpenAI-compatible: all returned models are usable (JIT loading assumed)
+                    modelSelect.disabled = allModels.length === 0;
+                    if (allModels.length === 0) {
+                        modelSelect.innerHTML = '<option value="">No models found - verify server URL</option>';
+                        modelHelpText.textContent = 'No models returned by the server. Verify the URL and try again.';
+                    } else {
+                        modelSelect.innerHTML = '<option value="">Select Model</option>';
+                        allModels.forEach(model => {
+                            const option = document.createElement('option');
+                            option.value = model;
+                            option.textContent = model;
+                            if (model === currentModel || model === llmSettingsData?.current_model) option.selected = true;
+                            modelSelect.appendChild(option);
+                        });
+                        modelHelpText.textContent = `Select your model (${allModels.length} available)`;
+                    }
                 } else {
                     // Ollama: Only show loaded models in dropdown
-                    modelSelect.disabled = loadedCount === 0;  // Disable if no models loaded
+                    modelSelect.disabled = loadedCount === 0;
 
                     if (loadedCount === 0) {
-                        // No models loaded - show message in dropdown
                         modelSelect.innerHTML = '<option value="">No models loaded - load one first</option>';
                         modelHelpText.textContent = 'Load a model on your server first, then click "Fetch Models" again';
                     } else {
-                        // Show only loaded models in dropdown
                         modelSelect.innerHTML = '<option value="">Select Model</option>';
                         loadedModels.forEach(model => {
                             const option = document.createElement('option');
@@ -1238,12 +1256,6 @@
                             if (model === currentModel || model === llmSettingsData?.current_model) option.selected = true;
                             modelSelect.appendChild(option);
                         });
-                    }
-
-                    // Update help text based on current provider
-                    if (selectedProvider === 'openai-compatible') {
-                        modelHelpText.textContent = `Select your server model (${response.data.model_count} available)`;
-                    } else {
                         modelHelpText.textContent = `Select your Ollama model (${loadedCount} loaded)`;
                     }
                 }

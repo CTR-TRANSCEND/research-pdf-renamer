@@ -228,6 +228,8 @@ def upload_files():
                 "files": file_statuses,
                 "errors": list(save_errors),
                 "download_url": None,
+                "download_urls": None,
+                "is_zip": False,
                 "elapsed_seconds": 0,
                 "start_time": time.time(),
                 "created_at": time.time(),
@@ -312,13 +314,31 @@ def _process_files_background(app, job_id, saved_files, llm_svc, file_svc, pdf_p
                 text, user_preferences
             )
 
-            if not metadata and extraction_error and extraction_error.value == "invalid_response":
-                # Retry once — LLM responses can be non-deterministic
+            # Retry up to 2 more times with escalating temperature so the LLM
+            # produces genuinely different outputs (temperature=0 is deterministic).
+            _retry_temperatures = [0.3, 0.5]
+            for _retry_idx, _temp in enumerate(_retry_temperatures):
+                if not (metadata is None and extraction_error and extraction_error.value == "invalid_response"):
+                    break
                 _update_file_stage(file_info, "retrying")
-                logger.info(f"Retrying LLM extraction for {path} (first attempt returned invalid response)")
+                logger.info(f"Retrying LLM extraction for {path} (attempt {_retry_idx + 2}, temperature={_temp})")
                 metadata, extraction_error = llm_svc.extract_paper_metadata(
-                    text, user_preferences
+                    text, user_preferences, temperature=_temp
                 )
+
+            # Last resort: lenient parse — substitutes "Unknown" for year/journal
+            # only when all 3 attempts genuinely could not find them.
+            if metadata is None and extraction_error and extraction_error.value == "invalid_response":
+                last_text = getattr(llm_svc, "_last_response_text", None)
+                if last_text:
+                    logger.info(f"All retries exhausted for {path} — attempting lenient extraction")
+                    logger.warning(
+                        f"Extracted text sent to LLM (first 800 chars):\n{text[:800]}"
+                    )
+                    metadata = llm_svc._parse_response_lenient(last_text)
+                    if metadata:
+                        extraction_error = None
+                        logger.info(f"Lenient extraction succeeded for {path}: year={metadata.get('year')}, journal={metadata.get('journal')}")
 
             if not metadata:
                 file_svc.cleanup_file(filepath)
@@ -348,6 +368,9 @@ def _process_files_background(app, job_id, saved_files, llm_svc, file_svc, pdf_p
                 filepath, suggested_name, session_id=session_id
             )
 
+            # Flag fields that fell back to "Unknown" so the UI can warn the user
+            unknown_fields = [f for f in ("year", "journal") if metadata.get(f) == "Unknown"]
+
             file_result = {
                 "original_name": path,
                 "original_filename": original_filename,
@@ -355,6 +378,7 @@ def _process_files_background(app, job_id, saved_files, llm_svc, file_svc, pdf_p
                 "download_path": download_path,
                 "metadata": metadata,
                 "pages_processed": pages_processed,
+                "unknown_fields": unknown_fields if unknown_fields else None,
             }
             return ("success", file_result, None)
 
@@ -541,16 +565,42 @@ def _process_files_background(app, job_id, saved_files, llm_svc, file_svc, pdf_p
             record_usage(len(processed_files), user_id=user_id,
                          ip_address=client_ip, user_agent=client_ua)
 
-        # Create download URL
+        # Decide whether to zip: always zip for 6+ files or when files span multiple dirs.
+        # For 1-5 files from a single directory, serve individual PDFs to avoid
+        # the Chrome "Keep" confirmation prompt that appears for zip downloads.
+        ZIP_THRESHOLD = 6
+        directories = {os.path.dirname(pf["original_name"]) for pf in processed_files}
+        has_multiple_dirs = len(directories) > 1
+        use_zip = len(processed_files) >= ZIP_THRESHOLD or has_multiple_dirs
+
         download_url = None
-        if len(processed_files) == 1:
+        download_urls = None  # list of individual PDF URLs (2-5 files, no zip)
+        is_zip = False
+
+        if len(processed_files) == 0:
+            pass
+        elif not use_zip and len(processed_files) == 1:
+            # Single file — serve PDF directly (existing behaviour)
             single_file = processed_files[0]
             download_url = f"{script_root}/api/download/{single_file['download_path']}"
             filepath = os.path.join(
                 file_svc.upload_folder, "downloads", single_file["download_path"]
             )
             file_svc.schedule_cleanup(filepath)
-        elif len(processed_files) > 1:
+        elif not use_zip:
+            # 2-5 files, single directory — serve as individual PDFs
+            download_urls = []
+            for pf in processed_files:
+                url = f"{script_root}/api/download/{pf['download_path']}"
+                download_urls.append(url)
+                filepath = os.path.join(
+                    file_svc.upload_folder, "downloads", pf["download_path"]
+                )
+                file_svc.schedule_cleanup(filepath)
+            download_url = download_urls[0]  # first URL for backwards compat
+        else:
+            # 6+ files or multiple directories — zip
+            is_zip = True
             zip_files = []
             for pf in processed_files:
                 filepath = os.path.join(
@@ -577,6 +627,8 @@ def _process_files_background(app, job_id, saved_files, llm_svc, file_svc, pdf_p
         if job:
             job["status"] = "complete"
             job["download_url"] = download_url
+            job["download_urls"] = download_urls
+            job["is_zip"] = is_zip
             job["elapsed_seconds"] = round(time.time() - job["start_time"], 1)
             # Store processed file details for the final response
             job["processed_files"] = processed_files + duplicate_results
@@ -605,6 +657,8 @@ def get_progress(job_id):
         "files": job_snapshot["files"],
         "errors": job_snapshot["errors"],
         "download_url": job_snapshot["download_url"],
+        "download_urls": job_snapshot.get("download_urls"),
+        "is_zip": job_snapshot.get("is_zip", False),
         "elapsed_seconds": round(time.time() - job_snapshot["start_time"], 1) if job_snapshot["status"] == "processing" else job_snapshot["elapsed_seconds"],
     }
 

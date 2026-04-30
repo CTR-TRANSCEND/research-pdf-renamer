@@ -38,12 +38,11 @@ class PaperMetadata(BaseModel):
     """Schema for validating LLM-extracted paper metadata."""
 
     author: str = Field(..., min_length=1, description="Primary author's last name")
-    year: str = Field(
-        ..., min_length=4, max_length=4, description="Publication year (YYYY)"
-    )
+    year: str = Field(..., min_length=4, max_length=4, description="Publication year (YYYY)")
     journal: str = Field(..., min_length=1, description="Journal name")
     title: str = Field(..., min_length=1, description="Paper title")
     keywords: str = Field(..., min_length=1, description="Comma-separated keywords")
+    suggested_filename: str = Field(..., min_length=1, description="Generated filename")
 
     @field_validator("keywords", mode="before")
     @classmethod
@@ -52,12 +51,11 @@ class PaperMetadata(BaseModel):
         if isinstance(v, list):
             return ", ".join(str(k) for k in v)
         return v
-    suggested_filename: str = Field(..., min_length=1, description="Generated filename")
 
     @field_validator("year", mode="before")
     @classmethod
     def validate_year(cls, v) -> str:
-        """Ensure year is a valid 4-digit year. Coerce int to str (LLMs often omit quotes)."""
+        """Coerce int to str (LLMs often omit quotes). Reject non-numeric or out-of-range."""
         v = str(v).strip()
         if not v.isdigit():
             raise ValueError("Year must be numeric")
@@ -72,11 +70,11 @@ class PaperMetadata(BaseModel):
         """Ensure filename is safe and ends with .pdf. Auto-sanitize common issues."""
         if not v.lower().endswith(".pdf"):
             v = v.rstrip(".") + ".pdf"
-        # Auto-fix: replace spaces with hyphens, remove other invalid chars
         name = v[:-4]  # strip .pdf
         name = name.replace(" ", "-")
         name = re.sub(r"[^A-Za-z0-9._-]", "", name)
-        name = re.sub(r"-+", "-", name)  # collapse multiple hyphens
+        name = re.sub(r"-+", "-", name)
+        name = re.sub(r"_+", "_", name)
         name = name.strip("-_.")
         v = name + ".pdf"
         if not re.match(r"^[A-Za-z0-9._-]+\.pdf$", v):
@@ -84,7 +82,7 @@ class PaperMetadata(BaseModel):
         return v
 
     model_config = ConfigDict(
-        strict=True,  # Strict type validation for declared fields
+        strict=True,
         extra="ignore",  # Silently drop extra fields — LLMs often return doi, abstract, etc.
     )
 
@@ -251,7 +249,7 @@ class LLMService:
         return provider_url
 
     def extract_paper_metadata(
-        self, text: str, user_preferences: Optional[Dict] = None
+        self, text: str, user_preferences: Optional[Dict] = None, temperature: float = 0.0
     ) -> Tuple[Optional[Dict], Optional[ExtractionError]]:
         """
         Extract metadata from research paper text.
@@ -282,11 +280,9 @@ class LLMService:
             elif self.provider == "ollama":
                 result, error = self._extract_with_ollama(text, user_preferences)
             elif self.provider == "openai-compatible":
-                # OpenAI-compatible servers use the same extraction logic as Ollama with server type detection
-                result, error = self._extract_with_ollama(text, user_preferences)
+                result, error = self._extract_with_ollama(text, user_preferences, temperature=temperature)
             elif self.provider == "lm-studio":
-                # LM Studio uses OpenAI-compatible endpoints
-                result, error = self._extract_with_ollama(text, user_preferences)
+                result, error = self._extract_with_ollama(text, user_preferences, temperature=temperature)
             else:
                 logger.error(f"Unsupported LLM provider: {self.provider}")
                 result, error = None, ExtractionError.SERVICE_UNAVAILABLE
@@ -424,7 +420,7 @@ class LLMService:
         return None, ExtractionError.UNKNOWN_ERROR
 
     def _extract_with_ollama(
-        self, text: str, user_preferences: Optional[Dict] = None
+        self, text: str, user_preferences: Optional[Dict] = None, temperature: float = 0.0
     ) -> Tuple[Optional[Dict], Optional[ExtractionError]]:
         """Extract metadata using Ollama API or OpenAI-compatible API."""
 
@@ -461,10 +457,9 @@ class LLMService:
 
         try:
             if server_type == "openai-compatible":
-                # Use OpenAI-compatible /v1/completions endpoint
                 logger.info(f"Using OpenAI-compatible endpoint for {self.model}")
                 return self._extract_openai_compatible(
-                    ollama_url, text, user_preferences, headers
+                    ollama_url, text, user_preferences, headers, temperature=temperature
                 )
             else:
                 # Use native Ollama /api/generate endpoint
@@ -485,6 +480,7 @@ class LLMService:
         text: str,
         user_preferences: Optional[Dict],
         headers: dict,
+        temperature: float = 0.0,
     ) -> Tuple[Optional[Dict], Optional[ExtractionError]]:
         """Extract metadata using OpenAI-compatible /v1/completions endpoint."""
         # PERF-004: Use shared httpx client instead of requests
@@ -497,45 +493,40 @@ class LLMService:
         # Create prompt
         prompt = self._create_prompt(text, user_preferences)
 
-        # Calculate max_tokens — reasoning/thinking models need more headroom
-        # (they use tokens for internal chain-of-thought before producing output)
-        if self.provider == "lm-studio":
-            max_tokens = max(2000, self.context_window // 3)
-        elif self.provider == "openai-compatible":
-            max_tokens = 2000
-        else:
-            max_tokens = 500
+        # Reasoning/thinking models need extra token headroom for chain-of-thought
+        max_tokens = max(2000, self.context_window // 3)
+
+        import time as _time
+
+        def _do_request(temperature=0.0):
+            # Always use chat/completions — handles reasoning tokens correctly for all models
+            return http_client.post(
+                f"{base_url}/v1/chat/completions",
+                headers=headers,
+                json={
+                    "model": self.model,
+                    "messages": [
+                        {"role": "system", "content": "You are a research paper metadata extractor. Respond with ONLY valid JSON, no explanation."},
+                        {"role": "user", "content": prompt},
+                    ],
+                    "temperature": temperature,
+                    "max_tokens": max_tokens,
+                },
+                timeout=self.request_timeout,
+            )
 
         try:
-            # Use chat/completions for LM Studio (chat models), completions for others
-            if self.provider == "lm-studio":
-                response = http_client.post(
-                    f"{base_url}/v1/chat/completions",
-                    headers=headers,
-                    json={
-                        "model": self.model,
-                        "messages": [
-                            {"role": "system", "content": "You are a research paper metadata extractor. Respond with ONLY valid JSON, no explanation."},
-                            {"role": "user", "content": prompt},
-                        ],
-                        "temperature": 0.0,
-                        "max_tokens": max_tokens,
-                    },
-                    timeout=self.request_timeout,
-                )
-            else:
-                response = http_client.post(
-                    f"{base_url}/v1/completions",
-                    headers=headers,
-                    json={
-                        "model": self.model,
-                        "prompt": prompt,
-                        "temperature": 0.0,
-                        "max_tokens": max_tokens,
-                    },
-                    timeout=self.request_timeout,
-                )
-
+            response = _do_request(temperature=temperature)
+            # Retry once on "Model unloaded" — LM Studio JIT mode will reload it
+            if response.status_code == 400:
+                try:
+                    err_body = response.json()
+                except Exception:
+                    err_body = {}
+                if "unload" in err_body.get("error", "").lower():
+                    logger.warning("Model unloaded by LM Studio — waiting 3s and retrying once")
+                    _time.sleep(3)
+                    response = _do_request(temperature=temperature)
             response.raise_for_status()
             result = response.json()
 
@@ -568,18 +559,20 @@ class LLMService:
                 logger.error(
                     f"Failed to parse OpenAI-compatible response. Response text: {response_text[:500]}"
                 )
+                # Stash for lenient fallback after all retries
+                self._last_response_text = response_text
                 return None, ExtractionError.INVALID_RESPONSE
 
-            # Debug: Log parsed metadata
             logger.debug(f"Parsed metadata: {metadata}")
 
-            # Validate required fields
             if not metadata.get("author"):
                 logger.warning(
                     f"OpenAI-compatible response missing author field. Metadata keys: {list(metadata.keys())}"
                 )
+                self._last_response_text = response_text
                 return None, ExtractionError.INVALID_RESPONSE
 
+            self._last_response_text = None
             return metadata, None
 
         except httpx.TimeoutException:
@@ -726,11 +719,12 @@ Extract the following metadata from this research paper text and respond with ON
 
 4. Title: The main title of the paper
 
-5. Keywords: Extract 3-5 specific, informative terms that describe what makes THIS paper unique.
-   - Focus on: specific methods, disease/condition, organism/cell type, key findings, or novel techniques
-   - AVOID generic field terms like "machine-learning", "cancer", "genetics", "bioinformatics" alone
-   - GOOD examples: "CRISPR-Cas9", "single-cell-RNA-seq", "Alzheimer-tau-pathology", "transformer-protein-structure"
-   - BAD examples: "deep-learning", "genomics", "clinical-study" (too broad, not specific enough)
+5. Keywords: Extract 3-5 terms that make THIS paper uniquely identifiable.
+   - PRIORITY ORDER: (1) disease/condition/phenotype, (2) biological system/cell type/organism, (3) specific named tools or algorithms that are the paper's contribution, (4) key mechanistic findings
+   - Generic assay or analysis methods (RNA-seq, ChIP-seq, GWAS, proteomics, scRNA-seq, bulk-sequencing) are ONLY acceptable as a keyword if the method itself IS the novel contribution of the paper — otherwise skip them
+   - Ask yourself: "Would a researcher searching specifically for THIS paper use these words?" If no, replace with something more specific
+   - GOOD: "Alzheimer-amyloid", "T-cell-exhaustion", "hepatocellular-carcinoma", "tau-phosphorylation", "DESeq2", "CRISPR-screen"
+   - BAD: "RNA-seq", "sequencing", "machine-learning", "cancer" (what type?), "genomics", "clinical-study" — all too generic
    - Use hyphens to connect multi-word terms
 
 6. Suggested Filename: Create a filename following the specified format
@@ -893,23 +887,109 @@ Rules for filename:
             logger.error(f"Unexpected error parsing response: {type(e).__name__}: {e}")
             return None
 
-        # QUAL-002 FIX: Validate parsed data against strict schema
         if not parsed_data:
             return None
 
         try:
-            # Validate using Pydantic schema - this ensures all required fields exist
-            # and validates data types, formats, and constraints
             validated_metadata = PaperMetadata(**parsed_data)
-
-            # Return validated data as dictionary
             return validated_metadata.model_dump()
-
         except Exception as validation_error:
             logger.warning(
                 f"Schema validation failed: {type(validation_error).__name__}: {validation_error}"
             )
             logger.debug(f"Invalid parsed data: {parsed_data}")
+            return None
+
+    def _parse_response_lenient(self, content: str) -> Optional[Dict]:
+        """Last-resort parser: substitutes 'Unknown' for missing year/journal rather
+        than failing. Only called after all normal retries are exhausted."""
+        if not content:
+            return None
+
+        parsed_data = None
+        try:
+            code_fence_match = re.search(
+                r"```(?:json)?\s*(\{.*?\})\s*```", content, re.DOTALL | re.IGNORECASE
+            )
+            if code_fence_match:
+                parsed_data = json.loads(code_fence_match.group(1))
+            if not parsed_data:
+                json_match = re.search(r"\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}", content, re.DOTALL)
+                if json_match:
+                    parsed_data = json.loads(json_match.group())
+            if not parsed_data:
+                parsed_data = json.loads(content)
+        except Exception:
+            return None
+
+        if not parsed_data:
+            return None
+
+        # Fill in "Unknown" for blank/missing year and journal
+        year_raw = str(parsed_data.get("year", "")).strip()
+        if not year_raw or not year_raw.isdigit() or not (1900 <= int(year_raw) <= 2100):
+            parsed_data["year"] = "Unknown"
+            # year field requires exactly 4 chars — use a 7-char sentinel that
+            # validate_filename will later strip; bypass the Field constraint by
+            # constructing the filename manually and patching suggested_filename
+            year_display = "Unknown"
+        else:
+            year_display = year_raw
+
+        journal_raw = str(parsed_data.get("journal", "")).strip()
+        if not journal_raw:
+            parsed_data["journal"] = "Unknown"
+            journal_display = "Unknown"
+        else:
+            journal_display = journal_raw
+
+        # Rebuild suggested_filename from known components
+        author = re.sub(r"[^A-Za-z0-9]", "", str(parsed_data.get("author", "Unknown")))[:20]
+        year_part = re.sub(r"[^A-Za-z0-9]", "", year_display)[:7]
+        journal_part = re.sub(r"[^A-Za-z0-9-]", "", journal_display.replace(" ", "-"))[:20]
+        kws_raw = parsed_data.get("keywords", "")
+        if isinstance(kws_raw, list):
+            kws_raw = ", ".join(str(k) for k in kws_raw)
+        kws = [re.sub(r"[^A-Za-z0-9-]", "", k.strip().replace(" ", "-"))
+               for k in re.split(r"[,\s]+", kws_raw)[:3] if k.strip()]
+        kw_part = "-".join(kws)[:40] if kws else "paper"
+        name = f"{author}_{year_part}_{journal_part}_{kw_part}".strip("_-")
+        name = re.sub(r"_+", "_", name)
+        parsed_data["suggested_filename"] = name + ".pdf"
+
+        # Now validate with patched year/journal bypassing strict Field constraints
+        # by using a temporarily relaxed model
+        try:
+            from pydantic import BaseModel as _BM, Field as _F, ConfigDict as _CD, field_validator as _fv
+            class _LenientMeta(_BM):
+                author: str = _F(default="Unknown")
+                year: str = _F(default="Unknown")
+                journal: str = _F(default="Unknown")
+                title: str = _F(default="Unknown")
+                keywords: str = _F(default="paper")
+                suggested_filename: str = _F(default="unknown.pdf")
+                model_config = _CD(extra="ignore", strict=False)
+
+                @_fv("keywords", mode="before")
+                @classmethod
+                def _kw(cls, v):
+                    return ", ".join(str(k) for k in v) if isinstance(v, list) else (v or "paper")
+
+                @_fv("suggested_filename")
+                @classmethod
+                def _fn(cls, v: str) -> str:
+                    if not v or not v.lower().endswith(".pdf"):
+                        v = (v or "unknown").rstrip(".") + ".pdf"
+                    name = re.sub(r"[^A-Za-z0-9._-]", "", v[:-4].replace(" ", "-"))
+                    name = re.sub(r"[-_]+", lambda m: m.group()[0], name).strip("-_.")
+                    return (name or "unknown") + ".pdf"
+
+            m = _LenientMeta(**parsed_data)
+            result = m.model_dump()
+            logger.info(f"Lenient extraction succeeded: year={result['year']}, journal={result['journal']}")
+            return result
+        except Exception as e:
+            logger.warning(f"Lenient extraction also failed: {e}")
             return None
 
     def validate_filename(self, filename: str) -> bool:

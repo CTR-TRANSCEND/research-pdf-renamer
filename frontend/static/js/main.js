@@ -34,6 +34,12 @@ function triggerDownload(url) {
     setTimeout(() => a.remove(), 0);
 }
 
+function triggerMultipleDownloads(urls) {
+    if (!urls || !urls.length) return;
+    // Stagger by 600ms — browsers block simultaneous download initiations
+    urls.forEach((url, i) => setTimeout(() => triggerDownload(url), i * 600));
+}
+
 // ---------------------------------------------------------------------------
 // Modal accessibility helper: Escape-to-close + focus return + simple focus trap.
 // Applied to any element with role="dialog". Activates when the dialog becomes
@@ -634,6 +640,8 @@ function startProgressPolling(jobId, filesToProcess, totalFiles) {
                 // Build a response-like data object for showResultsInModal
                 const resultData = {
                     download_url: progress.download_url,
+                    download_urls: progress.download_urls || null,
+                    is_zip: progress.is_zip || false,
                     errors: progress.errors || [],
                     elapsed_seconds: progress.elapsed_seconds,
                 };
@@ -680,10 +688,10 @@ function startProgressPolling(jobId, filesToProcess, totalFiles) {
                 setTimeout(() => {
                     showResultsInModal(resultData, totalFiles);
                     appendDuplicateNotices(resultData._duplicateFiles || [], resultData._collisionFiles || []);
-                    if (resultData.download_url) {
-                        setTimeout(() => {
-                            triggerDownload(resultData.download_url);
-                        }, 500);
+                    if (resultData.download_urls && resultData.download_urls.length > 1) {
+                        setTimeout(() => triggerMultipleDownloads(resultData.download_urls), 500);
+                    } else if (resultData.download_url) {
+                        setTimeout(() => triggerDownload(resultData.download_url), 500);
                     }
                 }, 500);
 
@@ -743,11 +751,15 @@ function handleSynchronousResponse(data, filesToProcess, totalFiles) {
         window._lastFailedFileObjects = [];
     }
 
-    if (data.download_url) {
+    if (data.download_url || (data.download_urls && data.download_urls.length)) {
         setTimeout(() => {
             showResultsInModal(data, totalFiles);
             setTimeout(() => {
-                triggerDownload(data.download_url);
+                if (data.download_urls && data.download_urls.length > 1) {
+                    triggerMultipleDownloads(data.download_urls);
+                } else {
+                    triggerDownload(data.download_url);
+                }
             }, 500);
         }, 800);
     } else if (data.errors) {
@@ -857,10 +869,16 @@ function showResultsInModal(data, totalSubmitted = 1) {
         html += '<h3 class="font-semibold text-gray-900 mb-1">Successfully Renamed Files:</h3>';
         html += '<div class="max-h-48 overflow-y-auto divide-y divide-gray-200">';
         data.files.forEach(file => {
+            const unknownFields = file.unknown_fields && file.unknown_fields.length ? file.unknown_fields : null;
+            const rowBg = unknownFields ? 'bg-amber-50' : '';
+            const warning = unknownFields
+                ? `<p class="text-xs text-amber-700 mt-0.5"><i class="fas fa-exclamation-triangle mr-1"></i>Could not extract ${unknownFields.join(' and ')} — set to "Unknown". Please rename manually.</p>`
+                : '';
             html += `
-                <div class="py-1.5 px-2">
+                <div class="py-1.5 px-2 ${rowBg}">
                     <p class="text-xs text-gray-500 truncate">${escapeHtml(file.original_name)}</p>
                     <p class="text-sm text-gray-900 truncate">&rarr; ${escapeHtml(file.new_name)}</p>
+                    ${warning}
                 </div>
             `;
         });
@@ -890,7 +908,25 @@ function showResultsInModal(data, totalSubmitted = 1) {
         window._lastFailedFiles = failedFiles;
     }
 
-    if (data.download_url) {
+    if (data.download_urls && data.download_urls.length > 1) {
+        // Individual PDF downloads (2–5 files, single directory)
+        const links = data.download_urls.map((url, i) => {
+            const file = data.files && data.files[i];
+            const label = file ? escapeHtml(file.new_name) : `File ${i + 1}`;
+            return `<a href="${escapeHtml(url)}" class="underline text-blue-700 hover:text-blue-900 block truncate">${label}</a>`;
+        }).join('');
+        html += `
+            <div class="bg-blue-50 p-4 rounded-lg">
+                <p class="text-sm text-blue-800 font-medium mb-2">
+                    <i class="fas fa-download mr-1"></i>
+                    Downloads starting automatically&hellip;
+                </p>
+                <div class="text-sm space-y-1">${links}</div>
+                <p class="text-xs text-blue-600 mt-2">If a file didn&rsquo;t download, click its link above.</p>
+            </div>
+        `;
+    } else if (data.download_url) {
+        const isZip = data.is_zip;
         html += `
             <div class="bg-blue-50 p-4 rounded-lg">
                 <p class="text-sm text-blue-800">
@@ -898,6 +934,10 @@ function showResultsInModal(data, totalSubmitted = 1) {
                     Your download should start automatically. If not,
                     <a href="${escapeHtml(data.download_url)}" class="underline font-semibold">click here</a>.
                 </p>
+                ${isZip ? `<p class="text-xs text-blue-600 mt-2">
+                    <i class="fas fa-info-circle mr-1"></i>
+                    <strong>Chrome users:</strong> If prompted, click <strong>&ldquo;Keep&rdquo;</strong> to save the zip file &mdash; this is a routine browser safety check for zip downloads and is not an error.
+                </p>` : ''}
             </div>
         `;
     }
