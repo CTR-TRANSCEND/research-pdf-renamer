@@ -7,8 +7,8 @@ AI-powered web application that automatically renames research PDF files using L
 - **Repository:** https://github.com/CTR-TRANSCEND/research-pdf-renamer
 - **Docker Image:** ghcr.io/ctr-transcend/research-pdf-renamer
 - **Production URL:** http://hurlab.med.und.edu/pdf-renamer/ (HTTP only — HTTPS cert not yet accessible to external clients; see Risks)
-- **Current version:** 0.3.7 (commit `acad211`, post-review patch)
-- **Last updated:** 2026-04-29 CDT (code review & fix session)
+- **Current version:** 0.4.0 (commit `7fad242`)
+- **Last updated:** 2026-04-29 CDT (v0.4.0 feature session)
 - **Last coding CLI used:** Claude Code CLI (Claude Sonnet 4.6)
 
 ## 2. Current State
@@ -38,7 +38,8 @@ AI-powered web application that automatically renames research PDF files using L
 | v0.3.6 tag + GHCR publish + Playwright smoke test | Completed | 2026-04-27 | Final close-out for the v0.3.x line |
 | End-of-session code review (CR-1…CR-5) — findings only | Completed | 2026-04-27 | 5 findings reported; no implementation |
 | CR-1…CR-5 implementation + v0.3.7 release | Completed | 2026-04-27 session 3 | All 5 findings fixed; v0.3.7 live on production |
-| v0.4.0 architecture work | Not started | — | Redis-backed jobs, async LLM I/O, LLMService split |
+| **v0.4.0 feature release** | **Completed 2026-04-29** | LM Studio fixes, smart download, PDF metadata extraction, duplicate detection, collision resolution |
+| v0.5.0 architecture work | Not started | — | Redis-backed jobs, async LLM I/O, LLMService split |
 
 ## 4. Outstanding Work
 
@@ -77,16 +78,65 @@ AI-powered web application that automatically renames research PDF files using L
 
 ## 7. Restart Instructions
 
-- **Starting point:** Tip of `main` is commit `32f82b3` (fix: address all CR-1…CR-5 post-release review findings). Tag `v0.3.7`. GHCR `:latest` and `:0.3.7` digest `sha256:6d566c78c5f084b01a1b68604b982f4b75b84a08cb217941db955ef3687f23db`.
-- **Live deployment:** v0.3.7 at http://hurlab.med.und.edu/pdf-renamer/ via `docker-compose.override.yml` (pulls GHCR `:latest`). HTTPS cert not yet accessible externally.
-- **LLM backend:** Provider=`openai-compatible`, model=`meta/llama-3.2-3b` (last known). URL via private network → spark-562c LM Studio. Fallback: switch admin panel → Ollama (Local CPU) `llama3.2:3b`. Settings persist in DB; admin save resets cached service immediately.
-- **To redeploy:** `cd ~/PROJECTS/research-pdf-renamer && newgrp docker <<<"docker compose up -d --force-recreate pdf-renamer"`
-- **To rebuild image:** `newgrp docker <<<"docker build --network=host -t ghcr.io/ctr-transcend/research-pdf-renamer:latest -t ghcr.io/ctr-transcend/research-pdf-renamer:0.3.7 . && docker push ghcr.io/ctr-transcend/research-pdf-renamer:latest && docker push ghcr.io/ctr-transcend/research-pdf-renamer:0.3.7"`
+- **Starting point:** Tip of `main` is commit `7fad242` (feat: v0.4.0). Version `0.4.0`.
+- **Live deployment:** v0.4.0 at http://hurlab.med.und.edu/pdf-renamer/ via `docker-compose.override.yml`. HTTPS cert not yet accessible externally.
+- **LLM backend:** Provider=`openai-compatible`, model=`gpt-oss-20b` (last known). URL via private network → spark-562c LM Studio. Fallback: switch admin panel → Ollama (Local CPU) `llama3.2:3b`. Settings persist in DB; admin save resets cached service immediately.
+
+---
+
+### ⚠️ CRITICAL: How to Build and Deploy on This Server
+
+`docker-compose.override.yml` (gitignored, server-local) pins the image to:
+```
+ghcr.io/ctr-transcend/research-pdf-renamer:latest
+```
+This means Docker Compose **always** uses that tag, not a generic local build tag.
+**If you build with any other tag, the container will NOT use your changes.**
+
+#### Step 1 — Build (always target the GHCR tag directly):
+```bash
+newgrp docker <<'EOF'
+docker build --no-cache --network=host \
+  -t ghcr.io/ctr-transcend/research-pdf-renamer:latest \
+  .
+EOF
+```
+> Use `--no-cache` whenever source files changed. Without it, Docker may serve stale layers.
+
+#### Step 2 — Restart the container:
+```bash
+newgrp docker <<'EOF'
+docker compose up -d --force-recreate pdf-renamer
+EOF
+```
+> `--force-recreate` is required. Plain `docker compose up -d` will reuse the running container and ignore the new image.
+
+#### Step 3 — Verify the new code is live:
+```bash
+newgrp docker <<'EOF'
+docker exec research-pdf-renamer-pdf-renamer-1 python3 -c "
+from backend.version import __version__; print('version:', __version__)
+"
+EOF
+```
+
+#### To also push to GHCR (optional, for versioned releases):
+```bash
+newgrp docker <<'EOF'
+docker tag ghcr.io/ctr-transcend/research-pdf-renamer:latest \
+           ghcr.io/ctr-transcend/research-pdf-renamer:0.4.0
+docker push ghcr.io/ctr-transcend/research-pdf-renamer:latest
+docker push ghcr.io/ctr-transcend/research-pdf-renamer:0.4.0
+EOF
+```
+
+---
+
 - **Admin credentials (live DB):** `junguk.hur@med.und.edu` / `FIctmidYcpPwlVJy` (reset 2026-04-27; admin should change). `admin@local` password unknown — was changed via UI on 2026-04-08.
-- **Key config files:** `.env` (gitignored — APPLICATION_ROOT=/pdf-renamer, LLM settings, OPENAI_COMPATIBLE_API_URL, OPENAI_COMPATIBLE_API_KEY=lm-studio, MAX_CONTENT_LENGTH=50MB. Optionally add JWT_SECRET_KEY=<new random hex> to silence the startup warning.), `docker-compose.override.yml` (gitignored — pulls GHCR `:latest`), Nginx at `/etc/nginx/sites-enabled/hurlab.med.und.edu.conf` (HSTS active, client_max_body_size 500M, proxy_read_timeout 600, proxy_buffering off).
+- **Key config files:** `.env` (gitignored — APPLICATION_ROOT=/pdf-renamer, LLM settings, OPENAI_COMPATIBLE_API_URL, OPENAI_COMPATIBLE_API_KEY=lm-studio, MAX_CONTENT_LENGTH=50MB. Optionally add JWT_SECRET_KEY=<new random hex> to silence the startup warning.), `docker-compose.override.yml` (gitignored — pins image to `ghcr.io/ctr-transcend/research-pdf-renamer:latest`), Nginx at `/etc/nginx/sites-enabled/hurlab.med.und.edu.conf` (HSTS active, client_max_body_size 500M, proxy_read_timeout 600, proxy_buffering off).
 - **Test users in DB:** `admin@local` (admin), `junguk.hur@med.und.edu` (admin).
 - **Recommended next actions (in priority order):**
-  1. **End-to-end real PDF upload** — upload 2–3 PDFs from browser, confirm per-file progress stages, renamed files appear, download works. No human has done this against v0.3.7.
-  2. **v0.4.0 architecture** — Redis-backed jobs, async LLM I/O, LLMService split per-provider.
-  3. **Tests** — golden-case coverage for `LLMService._parse_response` and `_process_files_background`.
-- **Last updated:** 2026-04-27 CDT (session 3)
+  1. **End-to-end real PDF upload** — re-upload the failing Elsevier PDF (`1-s2.0-S0969996124002389-main.pdf`) and confirm it now gets `Bahabry_2024_NeurobiologyofDisease_...` instead of `Unknown_Unknown`.
+  2. **Tests** — golden-case coverage for `LLMService._parse_response` and `_process_files_background`.
+  3. **v0.5.0 architecture** — Redis-backed jobs, async LLM I/O, LLMService split per-provider.
+- **Last updated:** 2026-04-29 CDT (v0.4.0 session)
