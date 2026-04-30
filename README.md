@@ -6,6 +6,8 @@ Research PDF File Renamer solves this problem by using large language models (LL
 
 The application supports multiple LLM providers including OpenAI, LM Studio, Ollama, and any OpenAI-compatible API server, making it suitable for both cloud-based and fully local, privacy-conscious deployments. It includes a complete user management system with registration, admin approval workflows, role-based access controls, and per-user upload limits. An admin dashboard provides system monitoring, LLM configuration, and user management capabilities. Deployment options range from a single Docker command to a production-grade systemd + Apache reverse proxy setup with SSL/TLS support.
 
+**Live Demo:** [hurlab.med.und.edu/pdf-renamer](http://hurlab.med.und.edu/pdf-renamer/) *(University of North Dakota network access required)*
+
 ![Main Page](docs/screenshots/01_main_page.png)
 
 ## Features
