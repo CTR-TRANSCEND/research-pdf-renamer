@@ -128,6 +128,12 @@ The main page provides a drag-and-drop area for uploading PDF files. You can als
 4. Files are automatically renamed to `Author_Year_Journal_Keywords.pdf`
 5. Download starts automatically (ZIP for multiple files)
 
+![Processing](docs/screenshots/08_processing.png)
+
+When complete, a summary popup shows every original filename mapped to its new name, with per-file download links.
+
+![Results](docs/screenshots/09_results.png)
+
 **Upload limits:**
 - Anonymous users: 5 files per submission, 5 submissions per year
 - Registered users: 30 files per submission, unlimited submissions
