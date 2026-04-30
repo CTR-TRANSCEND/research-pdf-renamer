@@ -711,13 +711,28 @@ class LLMService:
 Extract the following metadata from this research paper text and respond with ONLY a JSON object:
 
 1. Author: Extract the primary author's last name (most important for filename)
+
 2. Year: The ORIGINAL publication year of the paper in the journal (NOT the PMC availability year).
    - For PMC author manuscripts, look for "Published in final edited form as: [Journal]. [YEAR]" — use that YEAR.
    - IGNORE "available in PMC [YEAR]" — that is only when the PMC copy was posted.
    - Example: Text says "available in PMC 2024" and "Published in final edited form as: Cell. 2023" → year is 2023.
-3. Journal: Extract journal name (e.g., Nature, Science, bioRxiv, Cell, NEJM, etc.)
+
+3. Journal: Use the FULL, EXACT journal name as it appears in the paper — do NOT abbreviate or shorten.
+   - CORRECT: "Nature Communications", "Nature Methods", "Nature Medicine", "Cell Reports"
+   - WRONG: "Nature" (when the paper is in "Nature Communications" or another Nature sub-journal)
+   - CORRECT: "New England Journal of Medicine", not "NEJM"
+   - CORRECT: "Proceedings of the National Academy of Sciences", not "PNAS"
+   - If the paper is a preprint, use the server name: "bioRxiv", "medRxiv"
+
 4. Title: The main title of the paper
-5. Keywords: Extract 3-5 key words that represent the core research
+
+5. Keywords: Extract 3-5 specific, informative terms that describe what makes THIS paper unique.
+   - Focus on: specific methods, disease/condition, organism/cell type, key findings, or novel techniques
+   - AVOID generic field terms like "machine-learning", "cancer", "genetics", "bioinformatics" alone
+   - GOOD examples: "CRISPR-Cas9", "single-cell-RNA-seq", "Alzheimer-tau-pathology", "transformer-protein-structure"
+   - BAD examples: "deep-learning", "genomics", "clinical-study" (too broad, not specific enough)
+   - Use hyphens to connect multi-word terms
+
 6. Suggested Filename: Create a filename following the specified format
 
 {format_instructions}
@@ -729,9 +744,9 @@ Respond with JSON only (no other text). Example format:
 {{
     "author": "<first author last name>",
     "year": "<4-digit publication year>",
-    "journal": "<journal or preprint server name>",
+    "journal": "<full exact journal name>",
     "title": "<full paper title>",
-    "keywords": "<3-5 comma-separated key terms>",
+    "keywords": "<3-5 specific comma-separated key terms>",
     "suggested_filename": "<Author_Year_Journal_keywords.pdf>"
 }}
 """
