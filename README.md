@@ -18,6 +18,18 @@ The application supports multiple LLM providers including OpenAI, LM Studio, Oll
 - **Admin Dashboard** -- User management, LLM configuration, system monitoring
 - **Flexible Deployment** -- Docker, systemd + Apache reverse proxy, or standalone Flask
 
+## Important: LLM Performance Note
+
+> **This application works out of the box with a bundled CPU-based Ollama LLM, but CPU inference is slow** -- expect 1--3 minutes per file on a typical server.
+>
+> For practical use, it is **strongly recommended** to run this on a machine with a GPU and configure one of the following:
+>
+> - **Local GPU (Ollama):** Install [Ollama](https://ollama.com) on a GPU-enabled host, pull a model (e.g. `llama3.2`), and point the app at it via `OLLAMA_URL`.
+> - **Local GPU (LM Studio):** Run [LM Studio](https://lmstudio.ai) on a GPU machine and configure the app as `LLM_PROVIDER=openai-compatible`.
+> - **Cloud LLM API:** Use `LLM_PROVIDER=openai` with an `OPENAI_API_KEY` for fast, scalable inference without local hardware.
+>
+> Without a GPU or cloud API, the system is functional but not suitable for processing more than a handful of files at a time.
+
 ## Quick Start
 
 ### Option 1: Pre-built Docker Image (Fastest)
