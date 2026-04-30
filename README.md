@@ -404,7 +404,7 @@ git push origin v0.3.0
 This work is supported by:
 
 - **[TRANSCEND RDCDC](https://med.und.edu/research/transcend/index.html)** — supported by the National Institute of General Medical Sciences of the National Institutes of Health under Award Number **P20GM155890**
-- **HPI-COBRE CDAC (Computational Data Analysis Core)** — supported by the National Institute of General Medical Sciences of the National Institutes of Health under Award Number **P20GM113123**
+- **[HPI-COBRE CDAC (Computational Data Analysis Core)](https://med.und.edu/research/computational-data/index.html)** — supported by the National Institute of General Medical Sciences of the National Institutes of Health under Award Number **P20GM113123**
 
 The content is solely the responsibility of the authors and does not necessarily represent the official views of the National Institutes of Health.
 
