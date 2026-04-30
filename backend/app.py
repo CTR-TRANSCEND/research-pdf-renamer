@@ -278,7 +278,7 @@ def create_app(config_name=None):
         default_limits=["200 per day", "50 per hour"],
         storage_uri=_storage_url,
         strategy="fixed-window",
-        exempt_when=_rate_limit_exempt,
+        default_limits_exempt_when=_rate_limit_exempt,
     )
 
     # PERF-001: Export limiter for use in blueprints
