@@ -163,13 +163,20 @@ def create_app(config_name=None):
     class SelectiveCSRFProtect(CSRFProtect):
         def protect(self):
             # Exempt entry-point auth endpoints (no session yet to validate against)
+            # Also exempt post-login SPA endpoints: login is AJAX so the session
+            # changes without a page reload, leaving the CSRF meta tag stale.
+            # These endpoints are protected by @auth_required + JWT cookie
+            # (SameSite=Lax), so CSRF is redundant.
             exempt_paths = frozenset({
                 '/api/auth/login',
                 '/api/auth/register',
                 '/api/auth/logout',
                 '/api/auth/refresh-token',
-                '/api/auth/me',          # GET - read-only
-                '/api/auth/settings',    # GET - read-only
+                '/api/auth/me',              # GET - read-only
+                '/api/auth/settings',        # GET - read-only
+                '/api/auth/change-password', # JWT-protected; stale token after AJAX login
+                '/api/auth/update-profile',  # JWT-protected; stale token after AJAX login
+                '/api/auth/update-settings', # JWT-protected; stale token after AJAX login
             })
 
             # Exempt the upload + download endpoints exactly (no prefix bypass).
