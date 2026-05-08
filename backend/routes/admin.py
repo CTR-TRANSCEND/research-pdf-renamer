@@ -300,6 +300,22 @@ def delete_user(user_id):
     )
 
 
+@admin.route("/reset-password/<int:user_id>", methods=["POST"])
+@admin_required
+def reset_user_password(user_id):
+    """Generate a new random password for a user and return it (admin only)."""
+    import secrets as _secrets
+    user = db.get_or_404(User, user_id)
+    new_password = _secrets.token_urlsafe(16)
+    user.set_password(new_password)
+    db.session.commit()
+    return jsonify({
+        "message": f"Password reset for {user.email}",
+        "email": user.email,
+        "new_password": new_password,
+    })
+
+
 @admin.route("/users", methods=["GET"])
 @admin_required
 def get_all_users():

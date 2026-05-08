@@ -456,6 +456,36 @@
     </div>
 </div>
 
+<!-- Reset Password Result Modal -->
+<div id="reset-pw-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-50" role="dialog" aria-modal="true" aria-labelledby="reset-pw-title">
+    <div class="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
+        <div class="flex justify-between items-center mb-4">
+            <h2 id="reset-pw-title" class="text-xl font-bold text-gray-900">
+                <i class="fas fa-key mr-2 text-yellow-500"></i>Password Reset
+            </h2>
+            <button onclick="document.getElementById('reset-pw-modal').classList.add('hidden')"
+                    class="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
+        </div>
+        <p class="text-sm text-gray-600 mb-1">New password for <span id="reset-pw-email" class="font-semibold"></span>:</p>
+        <div class="flex items-center gap-2 mt-2 mb-4">
+            <input id="reset-pw-value" type="text" readonly
+                   class="flex-1 font-mono text-sm border border-gray-300 rounded px-3 py-2 bg-gray-50 select-all" />
+            <button onclick="navigator.clipboard.writeText(document.getElementById('reset-pw-value').value).then(() => showToast('Copied!', 'success'))"
+                    class="bg-indigo-600 text-white px-3 py-2 rounded hover:bg-indigo-700 text-sm">
+                <i class="fas fa-copy mr-1"></i>Copy
+            </button>
+        </div>
+        <p class="text-xs text-yellow-700 bg-yellow-50 border border-yellow-200 rounded p-2">
+            <i class="fas fa-exclamation-triangle mr-1"></i>
+            Share this password securely. It will not be shown again.
+        </p>
+        <div class="mt-4 text-right">
+            <button onclick="document.getElementById('reset-pw-modal').classList.add('hidden')"
+                    class="bg-gray-200 text-gray-700 px-4 py-2 rounded hover:bg-gray-300 text-sm">Close</button>
+        </div>
+    </div>
+</div>
+
 <!-- Usage Stats Modal -->
 <div id="usage-stats-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-40" role="dialog" aria-modal="true" aria-labelledby="admin-usage-stats-title">
     <div class="bg-white rounded-lg shadow-xl max-w-4xl w-full mx-4" style="max-height: 80vh; overflow-y: auto;">
@@ -844,6 +874,7 @@
                                 class="${user.is_admin ? 'text-orange-600 hover:text-orange-900' : 'text-purple-600 hover:text-purple-900'} mr-3">
                             ${user.is_admin ? 'Remove Admin' : 'Make Admin'}
                         </button>
+                        <button onclick="resetUserPassword(${user.id}, '${escapeHtml(user.email)}')" class="text-yellow-600 hover:text-yellow-900 mr-3">Reset PW</button>
                         <button onclick="deleteUser(${user.id})" class="text-red-600 hover:text-red-900">Delete</button>
                     </td>
                 </tr>
@@ -1561,6 +1592,18 @@
         } catch (error) {
             console.error('Error deleting user:', error);
             showToast(error.response?.data?.error || 'Error deleting user', 'error');
+        }
+    }
+
+    async function resetUserPassword(userId, userEmail) {
+        if (!confirm(`Reset password for ${userEmail}?\n\nA new random password will be generated and shown once.`)) return;
+        try {
+            const response = await axios.post(`admin/reset-password/${userId}`);
+            document.getElementById('reset-pw-email').textContent = response.data.email;
+            document.getElementById('reset-pw-value').value = response.data.new_password;
+            document.getElementById('reset-pw-modal').classList.remove('hidden');
+        } catch (error) {
+            showToast(error.response?.data?.error || 'Error resetting password', 'error');
         }
     }
 
