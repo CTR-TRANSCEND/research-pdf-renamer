@@ -185,7 +185,7 @@ DATABASE_URL=mysql+pymysql://pdfrenamer:password@localhost:3306/pdfrenamer
 |----------|-------------|---------|
 | `FLASK_ENV` | Flask environment | `production` |
 | `APPLICATION_ROOT` | URL path prefix | `/pdf-renamer` |
-| `MAX_CONTENT_LENGTH` | Max upload size (bytes) | `104857600` (100MB) |
+| `MAX_CONTENT_LENGTH` | Max upload size, whole request (bytes) | `524288000` (500MB) |
 | `INACTIVITY_TIMEOUT_MINUTES` | Session timeout | `30` |
 | `ALLOW_PRIVATE_IPS` | Allow private IPs for LLM URLs | `false` |
 
@@ -567,9 +567,15 @@ location /pdf-renamer/ {
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;
     proxy_read_timeout 300;
-    client_max_body_size 50M;
+    client_max_body_size 500M;
 }
 ```
+
+> **Important:** `client_max_body_size` MUST be at least as large as the app's
+> `MAX_CONTENT_LENGTH` (default **500 MB**). If the proxy value is smaller (an
+> earlier config used `50M`), Nginx rejects larger submissions with HTTP 413
+> *before* the request reaches Flask — the user sees "maximum allowed" even
+> though the app would have accepted the upload. Keep the two values in sync.
 
 Set `APPLICATION_ROOT=/pdf-renamer` in your `.env` file so the app generates correct URLs under the sub-path. If serving at the root (`/`), no `APPLICATION_ROOT` is needed.
 

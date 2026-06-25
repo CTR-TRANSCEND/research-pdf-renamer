@@ -7,14 +7,19 @@ AI-powered web application that automatically renames research PDF files using L
 - **Repository:** https://github.com/CTR-TRANSCEND/research-pdf-renamer
 - **Docker Image:** ghcr.io/ctr-transcend/research-pdf-renamer
 - **Production URL:** http://hurlab.med.und.edu/pdf-renamer/ (HTTP only — HTTPS cert not yet accessible to external clients; see Risks)
-- **Current version:** 0.4.0 (commit `7fad242`)
-- **Last updated:** 2026-04-29 CDT (v0.4.0 feature session)
-- **Last coding CLI used:** Claude Code CLI (Claude Sonnet 4.6)
+- **Current version:** 0.4.2 (commit `0bee2e8`)
+- **Last updated:** 2026-06-25 CDT (upload-size + processing-failure fix session)
+- **Last coding CLI used:** Claude Code CLI (Claude Opus 4.8)
 
 ## 2. Current State
 
 | Feature / Component | Status | Notes |
 |---|---|---|
+| **Nginx upload cap raised 50M → 500M** | **Completed 2026-06-25** | Active `location /pdf-renamer/` rejected >50 MB with 413 before Flask. Now `500M`, matches app `MAX_CONTENT_LENGTH`. Server-side only; `docs/deployment.md` example also corrected. |
+| **v0.4.1: progress-poll rate-limit exemption** | **Completed 2026-06-25** | Fixed false "Lost connection" on multi-file jobs (poll endpoint hit global 50/hr → 429). Commit `dcbb19e`. |
+| **v0.4.1: empty journal → "Unknown"** | **Completed 2026-06-25** | No more validation failure + 3 wasted retries when a paper has no journal. Commit `dcbb19e`. |
+| **v0.4.2: admin rate-limit exemption** | **Completed 2026-06-25** | `is_admin` users exempt from default limits (`request_is_admin()`). Commit `0bee2e8`. |
+| **v0.4.2: rebuild sparse filenames from fields** | **Completed 2026-06-25** | `Hribar_2023.pdf` → full name via `LLMService.build_filename()`. Commit `0bee2e8`. |
 | All v0.3.5 critical/high/medium adversarial review items | Completed | 16 fixes — commits cb6ae8d + c755f2e |
 | All v0.3.5 follow-on hotfix items (independent review batch) | Completed | 5 fixes — commit b517792 |
 | All v0.3.6 hardening items (post-v0.3.5 review) | Completed | 7 parallel implementers — commit d45bc86 |
@@ -78,8 +83,10 @@ AI-powered web application that automatically renames research PDF files using L
 
 ## 7. Restart Instructions
 
-- **Starting point:** Tip of `main` is commit `7fad242` (feat: v0.4.0). Version `0.4.0`.
-- **Live deployment:** v0.4.0 at http://hurlab.med.und.edu/pdf-renamer/ via `docker-compose.override.yml`. HTTPS cert not yet accessible externally.
+- **Starting point:** Tip of `main` is commit `0bee2e8` (v0.4.2). Version `0.4.2`.
+- **Deploy dir (server):** `/home/hurlab/PROJECTS/research-pdf-renamer` (owned by `hurlab`; has the gitignored `docker-compose.override.yml`). The `~/PROJECTS/research-pdf-renamer` in the build steps below means THIS path. `/data/juhurSync/.../10_apps/...` is only the rsync mirror — not the deployment.
+- **Privileged ops:** `juhur` is not in the `docker` group and sudo needs an interactive password. Run docker/nginx/deploy via a script placed in `/home/juhur/tmp/` that the user executes; read results back over SSH. Never use `! sudo` (does not work in Claude Code CLI).
+- **Live deployment:** v0.4.2 at https://hurlab.med.und.edu/pdf-renamer/ via `docker-compose.override.yml`. HTTPS works (the recurring outage was root-caused to a stray iptables `:443→:8080` REDIRECT in `/etc/ufw/before.rules` + `rules.v4` and durably fixed May 2026 — see wiki `concept/hurlab-https-outage`).
 - **LLM backend:** Provider=`openai-compatible`, model=`gpt-oss-20b` (last known). URL via private network → spark-562c LM Studio. Fallback: switch admin panel → Ollama (Local CPU) `llama3.2:3b`. Settings persist in DB; admin save resets cached service immediately.
 
 ---

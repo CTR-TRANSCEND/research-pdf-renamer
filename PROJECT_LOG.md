@@ -1,5 +1,33 @@
 # PROJECT_LOG.md - Research PDF File Renamer
 
+## Session 2026-06-25 CDT (Upload-size + processing-failure fixes, v0.4.1 → v0.4.2)
+
+- **Coding CLI used:** Claude Code CLI (Claude Opus 4.8)
+- **Phase(s):** Sync reconciliation, three production fixes shipped, docs
+
+### Sync reconciliation
+- GitHub `origin/main`, deployment (`/home/hurlab/PROJECTS/research-pdf-renamer`), and local home WSL2 were aligned. Home WSL2 was 1 commit behind (`e4a96e2` vs `ff621b6`); fast-forwarded. Handoff's claimed tip `7fad242` was stale — actual was `ff621b6` ("add Reset PW").
+- Deploy dir confirmed: `/home/hurlab/PROJECTS/research-pdf-renamer` (owned by `hurlab`, has gitignored `docker-compose.override.yml` pinning GHCR `:latest`). `/data/juhurSync/.../10_apps/...` is only the rsync mirror. `juhur` is NOT in the `docker` group and sudo needs an interactive password → all privileged ops run via scripts in `/home/juhur/tmp/` that the user executes.
+
+### Fixes shipped
+1. **Upload >50 MB rejected (nginx).** Active nginx `location /pdf-renamer/` had `client_max_body_size 50M` while the app allows 500 MB; nginx 413'd a 71.2 MB batch before Flask saw it. Raised to `500M`, `nginx -t` + reload. Server-side only (not in image); also fixed the `50M` example in `docs/deployment.md`.
+2. **"Lost connection to server" on multi-file jobs (v0.4.1).** Progress-poll endpoint `/api/upload/progress/<job_id>` was still subject to the global `50/hour` default (flask-limiter stacks per-route limits over defaults), so a 20-file job polling every 5 s hit HTTP 429 → 6 consecutive failures → false "Lost connection". Exempted it from defaults (keeps its `600/min`). Verified via container logs (RestartCount=0, OOMKilled=false — NOT a crash, NOT the DGX).
+3. **Empty journal failed validation (v0.4.1).** `PaperMetadata.journal` required ≥1 char; papers with no journal burned 3 retries → lenient fallback. Now coerced to "Unknown" on first parse.
+4. **Admin rate-limit exemption (v0.4.2).** `is_admin` users exempt from default limits via new `request_is_admin()` (decodes JWT like `auth_required`, runs in the limiter before-request hook).
+5. **Sparse filenames like `Hribar_2023.pdf` (v0.4.2).** App used the LLM's `suggested_filename` verbatim; LLM sometimes emitted a sparse name despite extracting journal/keywords into fields. New `LLMService.build_filename()` rebuilds from validated fields (honors all preset + Custom formats, omits empty/Unknown components); `upload.py` swaps it in when the LLM name dropped sections. Verified on container.
+
+### Commits (pushed to origin/main)
+- `dcbb19e` v0.4.1 — progress rate-limit exemption + empty-journal coercion
+- `0bee2e8` v0.4.2 — admin exemption + build_filename
+
+### Verification
+- v0.4.1 and v0.4.2 both built (`--no-cache`), `--force-recreate`d, health = healthy. `build_filename` confirmed on container: `Hribar_2023_Ophthalmology_ophthalmology-data-standards-OMOP-CDM.pdf`.
+- GHCR push fails (server `docker login` to GHCR expired) — non-fatal; production runs from locally-built `:latest`.
+
+### Next
+- **v0.4.3 (in progress):** new DEFAULT author format `Lastname-Firstname` (e.g. `Hribar-Jason`) — requires LLM first-name extraction + schema field + format/UI changes. Primary author only. Decided with user 2026-06-25.
+- User-driven end-to-end retest of the 20-file batch on v0.4.2.
+
 ## Session 2026-04-29 CDT (Code Review & Fix)
 
 - **Coding CLI used:** Claude Code CLI (Claude Sonnet 4.6)
