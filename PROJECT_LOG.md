@@ -19,14 +19,19 @@
 ### Commits (pushed to origin/main)
 - `dcbb19e` v0.4.1 — progress rate-limit exemption + empty-journal coercion
 - `0bee2e8` v0.4.2 — admin exemption + build_filename
+- `1a2eb4e` docs — record v0.4.1/v0.4.2 + nginx 500M
+- `678623a` v0.4.3 — LastName-FirstName author default + always-build-from-fields
 
 ### Verification
 - v0.4.1 and v0.4.2 both built (`--no-cache`), `--force-recreate`d, health = healthy. `build_filename` confirmed on container: `Hribar_2023_Ophthalmology_ophthalmology-data-standards-OMOP-CDM.pdf`.
 - GHCR push fails (server `docker login` to GHCR expired) — non-fatal; production runs from locally-built `:latest`.
 
+### v0.4.3 — shipped & verified (live)
+- New DEFAULT author format `Lastname-Firstname` (e.g. `Hribar-Jason`). LLM now extracts primary author first name (`author_first`, optional). `build_filename` renders `Lastname-Firstname` (fallback last-name-only). `upload.py` ALWAYS builds the filename from validated fields now (LLM `suggested_filename` only a fallback) — subsumes the v0.4.2 sparse fix. Profile labels + homepage hint updated. Container verified: `Hribar-Jason_2023_Ophthalmology_ophthalmology-data-standards-OMOP-CDM.pdf`.
+
 ### Next
-- **v0.4.3 (in progress):** new DEFAULT author format `Lastname-Firstname` (e.g. `Hribar-Jason`) — requires LLM first-name extraction + schema field + format/UI changes. Primary author only. Decided with user 2026-06-25.
-- User-driven end-to-end retest of the 20-file batch on v0.4.2.
+- User-driven end-to-end retest: upload real papers on v0.4.3, confirm `LastName-FirstName` filenames + the 20-file batch no longer disconnects.
+- Deferred (unchanged): test coverage for `_parse_response`/`_process_files_background`; v0.5.0 architecture (Redis jobs, async LLM I/O, LLMService split); re-login `docker` to GHCR so versioned images archive again.
 
 ## Session 2026-04-29 CDT (Code Review & Fix)
 

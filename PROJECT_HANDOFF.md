@@ -7,8 +7,8 @@ AI-powered web application that automatically renames research PDF files using L
 - **Repository:** https://github.com/CTR-TRANSCEND/research-pdf-renamer
 - **Docker Image:** ghcr.io/ctr-transcend/research-pdf-renamer
 - **Production URL:** http://hurlab.med.und.edu/pdf-renamer/ (HTTP only — HTTPS cert not yet accessible to external clients; see Risks)
-- **Current version:** 0.4.2 (commit `0bee2e8`)
-- **Last updated:** 2026-06-25 CDT (upload-size + processing-failure fix session)
+- **Current version:** 0.4.3 (commit `678623a`)
+- **Last updated:** 2026-06-25 CDT (upload-size + processing-failure fixes + LastName-FirstName default)
 - **Last coding CLI used:** Claude Code CLI (Claude Opus 4.8)
 
 ## 2. Current State
@@ -20,6 +20,7 @@ AI-powered web application that automatically renames research PDF files using L
 | **v0.4.1: empty journal → "Unknown"** | **Completed 2026-06-25** | No more validation failure + 3 wasted retries when a paper has no journal. Commit `dcbb19e`. |
 | **v0.4.2: admin rate-limit exemption** | **Completed 2026-06-25** | `is_admin` users exempt from default limits (`request_is_admin()`). Commit `0bee2e8`. |
 | **v0.4.2: rebuild sparse filenames from fields** | **Completed 2026-06-25** | `Hribar_2023.pdf` → full name via `LLMService.build_filename()`. Commit `0bee2e8`. |
+| **v0.4.3: LastName-FirstName author default** | **Completed 2026-06-25** | LLM extracts primary author first name (`author_first`); filenames always built from fields → `Hribar-Jason_2023_Journal_keywords`. All presets + Custom + UI labels updated. Commit `678623a`. Live + verified. |
 | All v0.3.5 critical/high/medium adversarial review items | Completed | 16 fixes — commits cb6ae8d + c755f2e |
 | All v0.3.5 follow-on hotfix items (independent review batch) | Completed | 5 fixes — commit b517792 |
 | All v0.3.6 hardening items (post-v0.3.5 review) | Completed | 7 parallel implementers — commit d45bc86 |
@@ -83,7 +84,7 @@ AI-powered web application that automatically renames research PDF files using L
 
 ## 7. Restart Instructions
 
-- **Starting point:** Tip of `main` is commit `0bee2e8` (v0.4.2). Version `0.4.2`.
+- **Starting point:** Tip of `main` is commit `678623a` (v0.4.3). Version `0.4.3`.
 - **Deploy dir (server):** `/home/hurlab/PROJECTS/research-pdf-renamer` (owned by `hurlab`; has the gitignored `docker-compose.override.yml`). The `~/PROJECTS/research-pdf-renamer` in the build steps below means THIS path. `/data/juhurSync/.../10_apps/...` is only the rsync mirror — not the deployment.
 - **Privileged ops:** `juhur` is not in the `docker` group and sudo needs an interactive password. Run docker/nginx/deploy via a script placed in `/home/juhur/tmp/` that the user executes; read results back over SSH. Never use `! sudo` (does not work in Claude Code CLI).
 - **Live deployment:** v0.4.2 at https://hurlab.med.und.edu/pdf-renamer/ via `docker-compose.override.yml`. HTTPS works (the recurring outage was root-caused to a stray iptables `:443→:8080` REDIRECT in `/etc/ufw/before.rules` + `rules.v4` and durably fixed May 2026 — see wiki `concept/hurlab-https-outage`).
