@@ -2,6 +2,14 @@
 
 All notable changes to Research PDF File Renamer are documented here.
 
+## [0.4.3] - 2026-06-25
+
+### Changed
+
+- **Default author format is now `LastName-FirstName`.** Filenames render the primary author as `Hribar-Jason` (last name + first name, hyphen-joined) when a first name can be determined, falling back to last-name-only otherwise. Applies to every preset and Custom `{author}` token. The LLM now also extracts the primary author's first name (new optional `author_first` field on `PaperMetadata`; empty when not found).
+- **Filenames are now built deterministically from the validated fields** (`LLMService.build_filename`) for every file, rather than trusting the LLM's `suggested_filename` (which was inconsistent — sparse names, last-name-only). The LLM's `suggested_filename` is kept only as a fallback if the rebuild yields nothing. This subsumes the v0.4.2 sparse-name fix and guarantees the configured format, the first name, and journal/keywords all appear when available.
+- Profile preferences labels and the homepage hint updated to show `LastName-FirstName_...`.
+
 ## [0.4.2] - 2026-06-25
 
 ### Added

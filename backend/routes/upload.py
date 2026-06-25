@@ -351,27 +351,24 @@ def _process_files_background(app, job_id, saved_files, llm_svc, file_svc, pdf_p
             # Post-processing and renaming
             _update_file_stage(file_info, "renaming")
 
-            # Validate suggested filename
-            suggested_name = metadata.get("suggested_filename", "")
+            # Build the filename deterministically from the validated fields:
+            # honors the configured format, renders the author as
+            # "Lastname-Firstname" when a first name was extracted, and always
+            # includes journal/keywords when present (omitting empty/Unknown
+            # parts). This replaces trusting the LLM's own suggested_filename,
+            # which was inconsistent (sparse names, last-name-only). The LLM's
+            # suggested_filename is kept only as a fallback if the rebuild is empty.
+            suggested_name = ""
+            try:
+                suggested_name = llm_svc.build_filename(metadata, user_preferences)
+            except Exception:
+                suggested_name = ""
+            if not suggested_name:
+                suggested_name = metadata.get("suggested_filename", "")
             if not llm_svc.validate_filename(suggested_name):
                 safe_name = secure_filename(original_filename)
                 name_part = os.path.splitext(safe_name)[0]
                 suggested_name = f"{name_part}_renamed.pdf"
-
-            # The LLM sometimes emits a sparse suggested_filename (e.g.
-            # "Hribar_2023.pdf") even when it extracted journal/keywords into the
-            # structured fields. Rebuild from those fields when the rebuilt name
-            # has more sections (it only adds real, non-Unknown data — empty
-            # components are omitted), so the configured format is honored.
-            try:
-                rebuilt = llm_svc.build_filename(metadata, user_preferences)
-                if rebuilt and rebuilt.count("_") > suggested_name.count("_"):
-                    logger.info(
-                        f"Rebuilt sparse filename '{suggested_name}' -> '{rebuilt}' for {path}"
-                    )
-                    suggested_name = rebuilt
-            except Exception:
-                pass
 
             # Enforce max 5 keywords: Author_Year_Journal_kw1-kw2-kw3-kw4-kw5.pdf
             # Split by underscore, find the keywords portion (after Author_Year_Journal),

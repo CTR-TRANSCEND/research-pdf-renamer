@@ -38,6 +38,9 @@ class PaperMetadata(BaseModel):
     """Schema for validating LLM-extracted paper metadata."""
 
     author: str = Field(..., min_length=1, description="Primary author's last name")
+    author_first: str = Field(
+        default="", description="Primary author's first name (optional, may be empty)"
+    )
     year: str = Field(..., min_length=4, max_length=4, description="Publication year (YYYY)")
     journal: str = Field(..., min_length=1, description="Journal name")
     title: str = Field(..., min_length=1, description="Paper title")
@@ -51,6 +54,14 @@ class PaperMetadata(BaseModel):
         if isinstance(v, list):
             return ", ".join(str(k) for k in v)
         return v
+
+    @field_validator("author_first", mode="before")
+    @classmethod
+    def coerce_author_first(cls, v):
+        """First name is optional — coerce null/whitespace to empty string."""
+        if v is None:
+            return ""
+        return str(v).strip()
 
     @field_validator("journal", mode="before")
     @classmethod
@@ -720,7 +731,10 @@ class LLMService:
         return f"""
 Extract the following metadata from this research paper text and respond with ONLY a JSON object:
 
-1. Author: Extract the primary author's last name (most important for filename)
+1. Author: Extract the primary (first-listed) author's last name (most important for filename).
+   Also extract that same author's FIRST name into "author_first" (given name, not initials
+   if the full name is available). If only an initial is shown, use the initial; if no first
+   name can be determined, use an empty string "".
 
 2. Year: The ORIGINAL publication year of the paper in the journal (NOT the PMC availability year).
    - For PMC author manuscripts, look for "Published in final edited form as: [Journal]. [YEAR]" — use that YEAR.
@@ -754,6 +768,7 @@ Paper text:
 Respond with JSON only (no other text). Example format:
 {{
     "author": "<first author last name>",
+    "author_first": "<first author first/given name, or empty string>",
     "year": "<4-digit publication year>",
     "journal": "<full exact journal name>",
     "title": "<full paper title>",
@@ -879,7 +894,11 @@ Rules for filename:
             s = re.sub(pattern, "", s)
             return re.sub(r"-+", "-", s).strip("-")
 
-        author = _clean(metadata.get("author", ""), allow_hyphen=False)[:30]
+        # Author renders as "Lastname-Firstname" when a first name is available,
+        # else just "Lastname" (graceful fallback). Primary author only.
+        last = _clean(metadata.get("author", ""), allow_hyphen=False)[:30]
+        first = _clean(metadata.get("author_first", ""), allow_hyphen=False)[:20]
+        author = f"{last}-{first}" if (last and first) else last
         year = _clean(metadata.get("year", ""), allow_hyphen=False)[:7]
 
         journal = _clean(metadata.get("journal", ""))[:40]
@@ -1053,6 +1072,7 @@ Rules for filename:
             from pydantic import BaseModel as _BM, Field as _F, ConfigDict as _CD, field_validator as _fv
             class _LenientMeta(_BM):
                 author: str = _F(default="Unknown")
+                author_first: str = _F(default="")
                 year: str = _F(default="Unknown")
                 journal: str = _F(default="Unknown")
                 title: str = _F(default="Unknown")
