@@ -52,6 +52,23 @@ class PaperMetadata(BaseModel):
             return ", ".join(str(k) for k in v)
         return v
 
+    @field_validator("journal", mode="before")
+    @classmethod
+    def coerce_journal(cls, v):
+        """Treat a blank/missing journal as 'Unknown' instead of failing.
+
+        Some papers (e.g. preprint/template PDFs) have no journal in their
+        extracted text, so the LLM legitimately returns an empty string.
+        Hard-failing validation here would burn the 3 escalating-temperature
+        retries and add log noise for a value that genuinely isn't present.
+        This mirrors the behavior of _parse_response_lenient.
+        """
+        if v is None:
+            return "Unknown"
+        if isinstance(v, str) and not v.strip():
+            return "Unknown"
+        return v
+
     @field_validator("year", mode="before")
     @classmethod
     def validate_year(cls, v) -> str:

@@ -2,6 +2,23 @@
 
 All notable changes to Research PDF File Renamer are documented here.
 
+## [0.4.1] - 2026-06-25
+
+### Fixed
+
+- **False "Lost connection to server" on multi-file jobs.** The progress-polling endpoint (`GET /api/upload/progress/<job_id>`) was subject to the global default rate limit (`50 per hour`) in addition to its own `600 per minute` cap — Flask-Limiter stacks per-route limits on top of the defaults rather than replacing them. The UI polls every 5 s while a job runs, so a long batch (e.g. 20 files) exhausted 50/hour and started receiving HTTP 429; six consecutive failures (~30 s) tripped the frontend's "Lost connection" guard and aborted an otherwise-healthy job. The endpoint is now exempt from the default limits (it keeps its 600/min cap), matching how the health-check endpoint is handled.
+- **Empty journal no longer fails extraction.** `PaperMetadata.journal` required ≥1 character, so papers whose extracted text omits a journal (preprints, template PDFs) failed schema validation, burned all 3 escalating-temperature retries, and fell through to the lenient parser. A blank/missing journal is now coerced to `"Unknown"` on first parse, eliminating the wasted retries and log noise.
+
+### Infrastructure (server-side, not in image)
+
+- Nginx `location /pdf-renamer/` `client_max_body_size` raised from `50M` to `500M` to match the app's `MAX_CONTENT_LENGTH` (500 MB). Previously any submission over 50 MB total was rejected by the proxy before reaching Flask.
+
+## [0.4.0] - 2026-04-29
+
+### Added
+
+- LM Studio / OpenAI-compatible backend fixes, smart download, PDF metadata extraction, duplicate detection (same-content grouping), and output-filename collision resolution. (Backfilled entry — see PROJECT_LOG.md for detail.)
+
 ## [0.3.7] - 2026-04-27
 
 ### Fixed

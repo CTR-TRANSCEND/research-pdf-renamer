@@ -272,12 +272,18 @@ def create_app(config_name=None):
             )
             _storage_url = "memory://"
 
-    # Exempt the health-check endpoint from rate limiting.
-    # Docker's internal health probe runs every 30 s (≈120/hr) from 127.0.0.1
-    # which would exceed the default 50/hr limit, causing the container to be
-    # marked unhealthy even when the app is perfectly fine.
+    # Exempt internal/poll endpoints from the *default* limits (their own
+    # per-route @limiter.limit decorators still apply).
+    # - main.health_check: Docker's health probe runs every 30 s (≈120/hr)
+    #   from 127.0.0.1, which would exceed the default 50/hr limit and mark
+    #   the container unhealthy even when the app is fine.
+    # - upload.get_progress: the UI polls job status every 5 s while a job
+    #   runs; a multi-file job easily exceeds 50/hr and the user gets a false
+    #   "Lost connection to server" after 6 consecutive 429s. It keeps its
+    #   own @limiter.limit("600 per minute") cap — only the global default is
+    #   removed (flask-limiter stacks per-route limits on top of defaults).
     def _rate_limit_exempt():
-        return request.endpoint == "main.health_check"
+        return request.endpoint in ("main.health_check", "upload.get_progress")
 
     limiter = Limiter(
         app=app,
