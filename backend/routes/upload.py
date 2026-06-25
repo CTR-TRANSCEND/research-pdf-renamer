@@ -358,6 +358,21 @@ def _process_files_background(app, job_id, saved_files, llm_svc, file_svc, pdf_p
                 name_part = os.path.splitext(safe_name)[0]
                 suggested_name = f"{name_part}_renamed.pdf"
 
+            # The LLM sometimes emits a sparse suggested_filename (e.g.
+            # "Hribar_2023.pdf") even when it extracted journal/keywords into the
+            # structured fields. Rebuild from those fields when the rebuilt name
+            # has more sections (it only adds real, non-Unknown data — empty
+            # components are omitted), so the configured format is honored.
+            try:
+                rebuilt = llm_svc.build_filename(metadata, user_preferences)
+                if rebuilt and rebuilt.count("_") > suggested_name.count("_"):
+                    logger.info(
+                        f"Rebuilt sparse filename '{suggested_name}' -> '{rebuilt}' for {path}"
+                    )
+                    suggested_name = rebuilt
+            except Exception:
+                pass
+
             # Enforce max 5 keywords: Author_Year_Journal_kw1-kw2-kw3-kw4-kw5.pdf
             # Split by underscore, find the keywords portion (after Author_Year_Journal),
             # and truncate if more than 5 hyphen-separated words

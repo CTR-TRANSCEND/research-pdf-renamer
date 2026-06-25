@@ -180,6 +180,55 @@ def get_jwt_from_cookie():
     return request.cookies.get("jwt_token")
 
 
+def request_is_admin():
+    """Best-effort check: is the current request from an authenticated admin?
+
+    Used by the rate limiter to exempt admins from the default per-hour limits.
+    Runs in a before-request hook (before @auth_required calls login_user), so it
+    cannot rely on Flask-Login's current_user for JWT-only clients — it decodes the
+    JWT the same way auth_required does. Never raises; returns False on any problem.
+    Anonymous requests (no token) return quickly without a DB hit.
+    """
+    # Session-authenticated admin (browser kept a Flask-Login session)
+    try:
+        if getattr(current_user, "is_authenticated", False) and getattr(
+            current_user, "is_admin", False
+        ):
+            return True
+    except Exception:
+        pass
+
+    # JWT-cookie / Authorization-header authenticated admin
+    try:
+        token = get_jwt_from_cookie()
+        if not token:
+            auth_header = request.headers.get("Authorization", "")
+            if auth_header.startswith("Bearer ") and len(auth_header) > 7:
+                token = auth_header[7:]
+        if not token:
+            return False
+
+        payload = jwt.decode(
+            token, current_app.config["JWT_SECRET_KEY"], algorithms=["HS256"]
+        )
+        user_id = payload.get("user_id")
+        if not user_id:
+            return False
+
+        from backend.database import db
+
+        user = db.session.get(User, user_id)
+        return bool(
+            user
+            and user.is_admin
+            and user.is_approved
+            and user.is_active
+            and user.deactivated_at is None
+        )
+    except Exception:
+        return False
+
+
 def refresh_token_if_needed(token):
     """Refresh token if valid and approaching expiration.
 

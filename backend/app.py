@@ -282,8 +282,15 @@ def create_app(config_name=None):
     #   "Lost connection to server" after 6 consecutive 429s. It keeps its
     #   own @limiter.limit("600 per minute") cap — only the global default is
     #   removed (flask-limiter stacks per-route limits on top of defaults).
+    # Authenticated admins are also exempt from the default limits — this is a
+    # trusted internal tool and admins legitimately make many requests (admin
+    # dashboard polling, bulk uploads). Per-route limits still apply to them.
     def _rate_limit_exempt():
-        return request.endpoint in ("main.health_check", "upload.get_progress")
+        if request.endpoint in ("main.health_check", "upload.get_progress"):
+            return True
+        from backend.utils.auth import request_is_admin
+
+        return request_is_admin()
 
     limiter = Limiter(
         app=app,

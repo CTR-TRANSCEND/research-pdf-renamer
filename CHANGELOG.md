@@ -2,6 +2,16 @@
 
 All notable changes to Research PDF File Renamer are documented here.
 
+## [0.4.2] - 2026-06-25
+
+### Added
+
+- **Admin accounts exempt from the default rate limit.** Authenticated admins (`is_admin`) are now exempt from the global `200/day` + `50/hour` defaults — this is a trusted internal tool and admins legitimately make many requests (dashboard polling, bulk uploads). Detection mirrors `auth_required` (JWT cookie/header), so it works before Flask-Login populates `current_user`. Per-route limits still apply.
+
+### Fixed
+
+- **Sparse filenames when the LLM emitted a lazy `suggested_filename`.** The app used the LLM's `suggested_filename` verbatim, so a paper could land as `Hribar_2023.pdf` even though the journal and keywords were correctly extracted into the structured fields. The filename is now rebuilt from the validated fields (`LLMService.build_filename`) whenever the LLM's name dropped sections it had data for; empty/Unknown components are omitted, so papers genuinely lacking a journal still yield a clean `Author_Year` name. Honors all preset formats and Custom templates.
+
 ## [0.4.1] - 2026-06-25
 
 ### Fixed

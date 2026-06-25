@@ -851,6 +851,79 @@ Rules for filename:
             filename_format, format_rules["Author_Year_Journal_Keywords"]
         )
 
+    def build_filename(
+        self, metadata: Dict, user_preferences: Optional[Dict] = None
+    ) -> str:
+        """Deterministically build a filename from the validated metadata fields.
+
+        The LLM sometimes emits a sparse ``suggested_filename`` (e.g.
+        ``Hribar_2023.pdf``) even when it extracted journal/keywords into the
+        structured fields. Rebuilding from the fields guarantees the configured
+        format is honored. Empty/Unknown components are omitted rather than
+        written as literal "Unknown"/"paper", so a paper that genuinely lacks a
+        journal still yields a clean ``Author_Year`` name. Honors the same
+        formats as ``_get_format_instructions``.
+        """
+        fmt = "Author_Year_Journal_Keywords"
+        custom_format = None
+        if user_preferences:
+            fmt = user_preferences.get("filename_format", fmt)
+            if fmt == "Custom":
+                custom_format = user_preferences.get(
+                    "custom_filename_format", "{author}_{year}_{title}"
+                )
+
+        def _clean(value, allow_hyphen=True):
+            s = str(value or "").strip().replace(" ", "-")
+            pattern = r"[^A-Za-z0-9-]" if allow_hyphen else r"[^A-Za-z0-9]"
+            s = re.sub(pattern, "", s)
+            return re.sub(r"-+", "-", s).strip("-")
+
+        author = _clean(metadata.get("author", ""), allow_hyphen=False)[:30]
+        year = _clean(metadata.get("year", ""), allow_hyphen=False)[:7]
+
+        journal = _clean(metadata.get("journal", ""))[:40]
+        if journal.lower() == "unknown":
+            journal = ""
+
+        title_words = re.findall(r"[A-Za-z0-9]+", str(metadata.get("title", "")))[:8]
+        title = "-".join(title_words)[:60]
+
+        kws_raw = metadata.get("keywords", "")
+        if isinstance(kws_raw, list):
+            kws_raw = ", ".join(str(k) for k in kws_raw)
+        kw_tokens = [_clean(k) for k in re.split(r",", str(kws_raw)) if k.strip()]
+        kw_tokens = [k for k in kw_tokens if k][:5]
+        keywords = "-".join(kw_tokens)[:60]
+        if keywords.lower() == "paper":
+            keywords = ""
+
+        if fmt == "Custom" and custom_format:
+            name = custom_format
+            for token, value in (
+                ("{author}", author),
+                ("{year}", year),
+                ("{journal}", journal),
+                ("{title}", title),
+                ("{keywords}", keywords),
+            ):
+                name = name.replace(token, value)
+        else:
+            order = {
+                "Author_Year_Title": [author, year, title],
+                "Author_Year_Journal": [author, year, journal],
+                "Year_Author_Title": [year, author, title],
+                "Author_Year_Journal_Keywords": [author, year, journal, keywords],
+            }.get(fmt, [author, year, journal, keywords])
+            name = "_".join(part for part in order if part)
+
+        # Final sanitize: collapse repeated separators, trim, ensure .pdf
+        name = re.sub(r"[^A-Za-z0-9._-]", "", name)
+        name = re.sub(r"_+", "_", name).strip("_-.")
+        if not name:
+            return ""
+        return name + ".pdf"
+
     def _parse_response(self, content: str) -> Optional[Dict]:
         """
         Parse LLM response to extract JSON with strict schema validation.
