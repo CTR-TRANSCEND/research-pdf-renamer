@@ -329,8 +329,14 @@ class PDFProcessor:
         if metadata.get("author"):
             parts.append(f"Author: {metadata['author']}")
         # 'subject' in Elsevier PDFs: "Neurobiology of Disease, 200 (2024) 106638. doi:..."
+        # but in many LaTeX/MDPI PDFs 'subject' holds the FULL abstract (~2500
+        # chars). Left uncapped it dominates the LLM text budget and pushes the
+        # title-page citation (journal + year) past MAX_TEXT_LENGTH, so cap it.
         if metadata.get("subject"):
-            parts.append(f"Source: {metadata['subject']}")
+            subject = str(metadata["subject"]).strip()
+            if len(subject) > 300:
+                subject = subject[:300].rstrip() + "..."
+            parts.append(f"Source: {subject}")
         if metadata.get("keywords"):
             parts.append(f"Keywords: {metadata['keywords']}")
         # creationDate format: D:YYYYMMDDHHmmss...
@@ -340,6 +346,63 @@ class PDFProcessor:
         if not parts:
             return ""
         return "--- Document Metadata ---\n" + "\n".join(parts)
+
+    def extract_pdf_metadata_fields(self, pdf_path: str) -> Dict[str, str]:
+        """Parse author/title/keywords/year from the PDF's embedded standard
+        metadata, for use as an authoritative fallback when the LLM misses a
+        field. Many publisher/LaTeX PDFs carry a clean author list, title and
+        keywords in the document properties even when the page text does not.
+
+        Returns a dict with any of: author, author_first, title, keywords, year.
+        Absent/unparseable fields are simply omitted. Best-effort only — never
+        raises.
+        """
+        out: Dict[str, str] = {}
+        if not HAS_PYMUPDF:
+            return out
+        try:
+            doc = pymupdf.open(pdf_path)
+            try:
+                md = doc.metadata or {}
+            finally:
+                doc.close()
+        except Exception as e:
+            logger.debug(f"extract_pdf_metadata_fields: could not read metadata: {e}")
+            return out
+
+        title = str(md.get("title") or "").strip()
+        if title:
+            out["title"] = title
+
+        # Author field is typically "First [M] Last, First Last, ... and Last".
+        # Take the first listed author; assume "First [Middle] Last" word order.
+        raw_author = str(md.get("author") or "").strip()
+        if raw_author:
+            first_author = re.split(r";| and |&|,", raw_author)[0].strip()
+            tokens = first_author.split()
+            if tokens:
+                out["author"] = tokens[-1]
+                if len(tokens) > 1:
+                    out["author_first"] = tokens[0]
+
+        # Keywords are often ';'- or ','-separated; normalise to comma-separated
+        # so build_filename can tokenise them.
+        raw_kw = str(md.get("keywords") or "").strip()
+        if raw_kw:
+            out["keywords"] = ", ".join(
+                k.strip() for k in re.split(r"[;,]", raw_kw) if k.strip()
+            )
+
+        # creationDate ("D:YYYYMMDD...") is the PDF generation date — a reasonable
+        # last-resort year guess, but lower confidence than a citation line, so
+        # callers should only use it when the LLM produced no year.
+        creation = str(md.get("creationDate") or "")
+        if len(creation) >= 6 and creation.startswith("D:") and creation[2:6].isdigit():
+            yr = creation[2:6]
+            if 1900 <= int(yr) <= 2100:
+                out["year"] = yr
+
+        return out
 
     def _get_file_hash(self, pdf_path: str) -> str:
         """Calculate SHA256 hash of PDF file for caching."""

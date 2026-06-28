@@ -350,6 +350,30 @@ def _process_files_background(app, job_id, saved_files, llm_svc, file_svc, pdf_p
                 else:
                     return ("error", None, f"{path}: Could not extract metadata")
 
+            # Backfill fields the LLM left blank/Unknown using the PDF's own
+            # embedded document metadata (author list, title, keywords, and a
+            # last-resort year). Publisher/LaTeX PDFs frequently carry clean
+            # author/keyword properties even when the LLM under-extracts from the
+            # (truncated) page text. The LLM result still wins whenever it found
+            # a value; this only fills the gaps.
+            def _is_blank(v):
+                return not v or str(v).strip() in ("", "Unknown", "paper")
+
+            try:
+                pdf_fields = pdf_proc.extract_pdf_metadata_fields(filepath)
+            except Exception:
+                pdf_fields = {}
+            if pdf_fields:
+                if _is_blank(metadata.get("author")) and pdf_fields.get("author"):
+                    metadata["author"] = pdf_fields["author"]
+                    metadata["author_first"] = pdf_fields.get("author_first", "")
+                if _is_blank(metadata.get("keywords")) and pdf_fields.get("keywords"):
+                    metadata["keywords"] = pdf_fields["keywords"]
+                if _is_blank(metadata.get("title")) and pdf_fields.get("title"):
+                    metadata["title"] = pdf_fields["title"]
+                if _is_blank(metadata.get("year")) and pdf_fields.get("year"):
+                    metadata["year"] = pdf_fields["year"]
+
             # Post-processing and renaming
             _update_file_stage(file_info, "renaming")
 

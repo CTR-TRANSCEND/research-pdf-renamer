@@ -2,6 +2,16 @@
 
 All notable changes to Research PDF File Renamer are documented here.
 
+## [0.4.6] - 2026-06-28
+
+### Fixed
+
+- **Author/year/journal no longer lost on metadata-rich papers.** Root cause: the extracted PDF text was hard-truncated to 3000 chars before the LLM saw it, and the PDF's embedded `subject` property (which for many LaTeX/MDPI PDFs holds the *entire abstract*, ~2500 chars) was injected ahead of the page text — so the title-page citation line carrying the journal and year was truncated away, and the LLM frequently returned a blank extraction (rendered as `Unknown_Unknown_Unknown_paper.pdf`). Three independent changes fix this:
+  - The injected `subject`/abstract is now **capped at 300 chars** (`PDFProcessor._build_metadata_header`) so it can't crowd out the page text.
+  - The LLM text budget is raised from **3000 → 8000 chars** (`MAX_TEXT_LENGTH`, configurable), comfortably covering the metadata header + first page within the gpt-oss-20b context.
+  - The PDF's embedded document properties are now used as an **authoritative fallback** (`PDFProcessor.extract_pdf_metadata_fields`): when the LLM leaves author/title/keywords/year blank, they are filled from the PDF metadata (first-author last/first name, keywords, and a last-resort creation-year). The LLM result still wins whenever it found a value.
+- Net effect: a metadata-rich paper that previously produced `Unknown_Unknown_Unknown_paper.pdf` now yields e.g. `Langevin-Stephanie_2022_Int-J-Environ-Res-Public-Health_antisocial-trajectories-...`. Genuine preprints with no journal/year on the first page (and none in metadata) still honestly report `Unknown` for those fields.
+
 ## [0.4.5] - 2026-06-25
 
 ### Changed

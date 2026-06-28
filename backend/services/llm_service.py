@@ -144,7 +144,7 @@ class LLMService:
 
         # Text processing limits
         self.min_text_length = self.config.get("MIN_TEXT_LENGTH") or 50
-        self.max_text_length = self.config.get("MAX_TEXT_LENGTH") or 3000
+        self.max_text_length = self.config.get("MAX_TEXT_LENGTH") or 8000
 
         # Context window configuration (for LM Studio)
         self.context_window = self._load_context_window()

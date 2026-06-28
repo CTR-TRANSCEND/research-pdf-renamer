@@ -99,6 +99,13 @@ class Config:
     # ceiling can grow without weakening the per-file limit.
     MAX_FILE_SIZE = int(os.environ.get("MAX_FILE_SIZE", 50 * 1024 * 1024))
 
+    # Max characters of extracted PDF text sent to the LLM. The title page's
+    # citation line (journal + year) often sits a few thousand characters in,
+    # so a tight cap truncates it away before the model sees it. 8000 chars
+    # (~2000 tokens) comfortably covers the metadata header + first page while
+    # staying well inside the gpt-oss-20b context window.
+    MAX_TEXT_LENGTH = int(os.environ.get("MAX_TEXT_LENGTH", 8000))
+
     # LLM settings
     # Default to Ollama (local LLM) - can be overridden by environment variables or database settings
     LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "ollama")
