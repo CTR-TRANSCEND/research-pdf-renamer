@@ -111,6 +111,10 @@ logs/*
 *.bak
 *.backup
 
+# Local scratch dir: uploaded test PDFs (user data) + one-off diagnostic scripts.
+# Never commit research PDFs or scratch tooling to the shared repo.
+tmp/
+
 # ===========================================
 # Backups
 # ===========================================
