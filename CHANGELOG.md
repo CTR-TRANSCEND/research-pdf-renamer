@@ -2,6 +2,12 @@
 
 All notable changes to Research PDF File Renamer are documented here.
 
+## [0.4.4] - 2026-06-25
+
+### Fixed
+
+- **Missing fields now keep an `Unknown` placeholder in the filename instead of being dropped.** v0.4.2's `build_filename` omitted empty/Unknown components, so a paper with no journal produced e.g. `Tu-Tao_2024_diagnosticAI-LLM-selfplay` — a 3-section name that misaligns the slots (keywords sitting in the journal position). Filenames now always preserve the configured `_`-separated structure: `Tu-Tao_2024_Unknown_diagnosticAI-LLM-selfplay`. Applies to every field (author/year/journal/title/keywords) and all preset + Custom formats.
+
 ## [0.4.3] - 2026-06-25
 
 ### Changed

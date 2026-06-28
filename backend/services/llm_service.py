@@ -874,10 +874,10 @@ Rules for filename:
         The LLM sometimes emits a sparse ``suggested_filename`` (e.g.
         ``Hribar_2023.pdf``) even when it extracted journal/keywords into the
         structured fields. Rebuilding from the fields guarantees the configured
-        format is honored. Empty/Unknown components are omitted rather than
-        written as literal "Unknown"/"paper", so a paper that genuinely lacks a
-        journal still yields a clean ``Author_Year`` name. Honors the same
-        formats as ``_get_format_instructions``.
+        format is honored. Missing fields use the literal ``Unknown`` placeholder
+        (rather than being dropped) so the ``_``-separated slot structure stays
+        consistent across all outputs (e.g. ``Tu-Tao_2024_Unknown_diagnosticAI``).
+        Honors the same formats as ``_get_format_instructions``.
         """
         fmt = "Author_Year_Journal_Keywords"
         custom_format = None
@@ -894,28 +894,28 @@ Rules for filename:
             s = re.sub(pattern, "", s)
             return re.sub(r"-+", "-", s).strip("-")
 
+        # Every field falls back to the "Unknown" placeholder when absent so the
+        # format structure (fields separated by "_") is always preserved — e.g. a
+        # paper with no journal yields "Author_Year_Unknown_Keywords", not a
+        # 3-section name that misaligns the slots.
         # Author renders as "Lastname-Firstname" when a first name is available,
-        # else just "Lastname" (graceful fallback). Primary author only.
+        # else just "Lastname". Primary author only.
+        PLACEHOLDER = "Unknown"
         last = _clean(metadata.get("author", ""), allow_hyphen=False)[:30]
         first = _clean(metadata.get("author_first", ""), allow_hyphen=False)[:20]
-        author = f"{last}-{first}" if (last and first) else last
-        year = _clean(metadata.get("year", ""), allow_hyphen=False)[:7]
-
-        journal = _clean(metadata.get("journal", ""))[:40]
-        if journal.lower() == "unknown":
-            journal = ""
+        author = (f"{last}-{first}" if (last and first) else last) or PLACEHOLDER
+        year = _clean(metadata.get("year", ""), allow_hyphen=False)[:7] or PLACEHOLDER
+        journal = _clean(metadata.get("journal", ""))[:40] or PLACEHOLDER
 
         title_words = re.findall(r"[A-Za-z0-9]+", str(metadata.get("title", "")))[:8]
-        title = "-".join(title_words)[:60]
+        title = "-".join(title_words)[:60] or PLACEHOLDER
 
         kws_raw = metadata.get("keywords", "")
         if isinstance(kws_raw, list):
             kws_raw = ", ".join(str(k) for k in kws_raw)
         kw_tokens = [_clean(k) for k in re.split(r",", str(kws_raw)) if k.strip()]
         kw_tokens = [k for k in kw_tokens if k][:5]
-        keywords = "-".join(kw_tokens)[:60]
-        if keywords.lower() == "paper":
-            keywords = ""
+        keywords = "-".join(kw_tokens)[:60] or PLACEHOLDER
 
         if fmt == "Custom" and custom_format:
             name = custom_format
@@ -934,7 +934,7 @@ Rules for filename:
                 "Year_Author_Title": [year, author, title],
                 "Author_Year_Journal_Keywords": [author, year, journal, keywords],
             }.get(fmt, [author, year, journal, keywords])
-            name = "_".join(part for part in order if part)
+            name = "_".join(order)
 
         # Final sanitize: collapse repeated separators, trim, ensure .pdf
         name = re.sub(r"[^A-Za-z0-9._-]", "", name)
