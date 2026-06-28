@@ -134,6 +134,8 @@ def upload_files():
 
         # Get file paths if folder upload
         paths = request.form.getlist("paths") if "paths" in request.form else None
+        # Folder uploads request that the output ZIP mirror the input directory tree.
+        preserve_structure = request.form.get("preserve_structure") == "true"
 
         # Check file count limits
         if current_user and current_user.is_authenticated:
@@ -244,7 +246,7 @@ def upload_files():
             target=_process_files_background,
             args=(app, job_id, saved_files, llm_svc, file_svc, pdf_proc,
                   user_preferences, session_id, script_root, user_id,
-                  client_ip, client_ua),
+                  client_ip, client_ua, preserve_structure),
             daemon=True,
         )
         thread.start()
@@ -276,7 +278,7 @@ def upload_files():
 
 def _process_files_background(app, job_id, saved_files, llm_svc, file_svc, pdf_proc,
                                user_preferences, session_id, script_root, user_id,
-                               client_ip, client_ua):
+                               client_ip, client_ua, preserve_structure=False):
     """Background thread that processes files and updates progress dict."""
     processed_files = []
     errors = []
@@ -618,7 +620,14 @@ def _process_files_background(app, job_id, saved_files, llm_svc, file_svc, pdf_p
                 filepath = os.path.join(
                     file_svc.upload_folder, "downloads", pf["download_path"]
                 )
-                zip_files.append((filepath, pf["new_name"]))
+                # For folder uploads, mirror the original directory tree inside
+                # the ZIP: place the renamed file under its source subfolder.
+                arcname = pf["new_name"]
+                if preserve_structure:
+                    rel_dir = os.path.dirname(pf.get("original_name", ""))
+                    if rel_dir:
+                        arcname = os.path.join(rel_dir, pf["new_name"])
+                zip_files.append((filepath, arcname))
 
             zip_name = f"processed_files_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
             zip_full_path = file_svc.create_zip(

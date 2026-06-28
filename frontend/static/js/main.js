@@ -189,6 +189,7 @@ function setupEventListeners() {
     if (folderInput) {
         folderInput.addEventListener('change', (e) => {
             handleFolder(e.target.files);
+            e.target.value = '';  // reset so another folder can be picked and added
         });
     }
 
@@ -197,9 +198,9 @@ function setupEventListeners() {
         setupDragAndDrop(filesDropZone, handleFiles);
     }
 
-      // Drag and drop events for folders
+      // Drag and drop events for folders (recursive, multi-folder)
     if (folderDropZone) {
-        setupDragAndDrop(folderDropZone, handleFolder);
+        setupFolderDragAndDrop(folderDropZone);
     }
 
     // Process button
@@ -259,12 +260,13 @@ function switchMode(mode) {
 
 // File size limits (must mirror server-side MAX_CONTENT_LENGTH).
 // Per-file hard cap rejects upload; total size soft cap warns only.
-const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024;       // 50 MB per file
-const TOTAL_SIZE_WARN_BYTES = 100 * 1024 * 1024;    // 100 MB combined
+const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024;          // 50 MB per file (hard)
+const TOTAL_SIZE_WARN_BYTES = 1000 * 1024 * 1024;      // 1 GB combined — warn
+const MAX_TOTAL_SIZE_BYTES = 5000 * 1024 * 1024;       // 5 GB combined — hard (mirrors server MAX_CONTENT_LENGTH)
 
 // Validate a list of File objects against size limits.
 // Returns true if upload may proceed, false if a hard limit was hit.
-// Shows a toast for both the hard reject and the soft warning cases.
+// Shows a toast for the hard rejects (per-file, total) and the soft warning.
 function validateFileSizes(files) {
     // Hard reject: any single file over per-file cap
     const oversized = files.filter(f => f.size > MAX_FILE_SIZE_BYTES);
@@ -278,8 +280,18 @@ function validateFileSizes(files) {
         return false;
     }
 
-    // Soft warning: combined size over total cap
     const totalSize = files.reduce((sum, f) => sum + f.size, 0);
+
+    // Hard reject: combined size over the whole-request cap
+    if (totalSize > MAX_TOTAL_SIZE_BYTES) {
+        showToast(
+            `Upload too large: ${formatFileSize(totalSize)} total. Maximum is ${formatFileSize(MAX_TOTAL_SIZE_BYTES)} per session.`,
+            'error'
+        );
+        return false;
+    }
+
+    // Soft warning: combined size over warn threshold
     if (totalSize > TOTAL_SIZE_WARN_BYTES) {
         showToast(
             `Large upload: ${formatFileSize(totalSize)} total. This may take longer to process.`,
@@ -290,31 +302,123 @@ function validateFileSizes(files) {
     return true;
 }
 
-// Handle folder upload
+// Handle folder upload from the directory picker. webkitdirectory already
+// recurses subfolders, so e.target.files is the full tree. Accumulates across
+// repeated picks (pick several folders one after another).
 function handleFolder(files) {
-    const filesArray = Array.from(files);
-    const pdfFiles = filesArray.filter(file => file.type === 'application/pdf');
-
-    if (pdfFiles.length === 0) {
-        showToast('No PDF files found in the folder', 'error');
-        return;
-    }
-
-    // Enforce per-file size cap; warn on large total.
-    if (!validateFileSizes(pdfFiles)) {
-        return;
-    }
-
-    // Store with relative paths
-    selectedFolders = pdfFiles.map(file => ({
-        file: file,
-        path: file.webkitRelativePath || file.name
+    const items = Array.from(files).map(file => ({
+        file,
+        path: file.webkitRelativePath || file.name,
     }));
+    addFolderItems(items);
+}
 
-    // Update UI
+// Add {file, path} items to selectedFolders: keep PDFs, dedupe by relative path,
+// enforce per-file + total size and the per-session count limit. Accumulates so
+// multiple folders can be combined; preserves each file's relative path.
+function addFolderItems(items) {
+    const pdfItems = items.filter(it =>
+        it.file.type === 'application/pdf' || it.path.toLowerCase().endsWith('.pdf')
+    );
+    if (pdfItems.length === 0) {
+        showToast('No PDF files found in the folder(s)', 'error');
+        return;
+    }
+
+    // Dedupe new items against what's already selected (by relative path)
+    const existingPaths = new Set(selectedFolders.map(f => f.path));
+    const freshItems = pdfItems.filter(it => !existingPaths.has(it.path));
+    const skipped = pdfItems.length - freshItems.length;
+    if (freshItems.length === 0) {
+        showToast('Those PDF files are already added', 'warning');
+        return;
+    }
+
+    const combined = [...selectedFolders, ...freshItems];
+
+    // Per-file + total size caps (validate the combined set)
+    if (!validateFileSizes(combined.map(it => it.file))) {
+        return;
+    }
+
+    // Per-session count limit
+    const maxFiles = userLimits?.max_files_per_submission || 5;
+    if (combined.length > maxFiles) {
+        showToast(
+            `Cannot add ${freshItems.length} files. Maximum ${maxFiles} per session (currently ${selectedFolders.length}).`,
+            'error'
+        );
+        return;
+    }
+
+    selectedFolders = combined;
     displaySelectedFiles();
     updateProcessButton();
-    showToast(`${pdfFiles.length} PDF files found in folder`, 'success');
+    const skipNote = skipped > 0 ? ` (${skipped} duplicate${skipped > 1 ? 's' : ''} skipped)` : '';
+    showToast(`${freshItems.length} PDF file(s) added — ${selectedFolders.length} total${skipNote}`, 'success');
+}
+
+// Recursively collect {file, path} from dropped directory entries. Drag-drop
+// does NOT recurse on its own (unlike the webkitdirectory picker), so we walk
+// the entry tree via the FileSystem entry API. Supports multiple dropped folders.
+function _readAllEntries(reader) {
+    return new Promise((resolve) => {
+        const all = [];
+        const readBatch = () => {
+            reader.readEntries((batch) => {
+                if (!batch.length) { resolve(all); return; }
+                all.push(...batch);
+                readBatch();  // readEntries yields in batches; keep going until empty
+            }, () => resolve(all));
+        };
+        readBatch();
+    });
+}
+
+async function _collectEntry(entry, prefix, out) {
+    if (entry.isFile) {
+        await new Promise((resolve) => {
+            entry.file((file) => {
+                out.push({ file, path: prefix + entry.name });
+                resolve();
+            }, () => resolve());
+        });
+    } else if (entry.isDirectory) {
+        const children = await _readAllEntries(entry.createReader());
+        for (const child of children) {
+            await _collectEntry(child, prefix + entry.name + '/', out);
+        }
+    }
+}
+
+async function handleFolderDrop(dataTransfer) {
+    const entries = [];
+    const items = dataTransfer.items ? Array.from(dataTransfer.items) : [];
+    for (const item of items) {
+        const entry = item.webkitGetAsEntry && item.webkitGetAsEntry();
+        if (entry) entries.push(entry);
+    }
+    if (entries.length === 0) {
+        // Browser without the entry API — fall back to the flat file list
+        handleFolder(dataTransfer.files);
+        return;
+    }
+    const collected = [];
+    for (const entry of entries) {
+        await _collectEntry(entry, '', collected);
+    }
+    addFolderItems(collected);
+}
+
+// Drag-drop setup for the folder zone (recursive, multi-folder).
+function setupFolderDragAndDrop(zone) {
+    zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('drag-active'); });
+    zone.addEventListener('dragleave', () => zone.classList.remove('drag-active'));
+    zone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        zone.classList.remove('drag-active');
+        handleFolderDrop(e.dataTransfer);
+    });
 }
 
 // Handle selected files

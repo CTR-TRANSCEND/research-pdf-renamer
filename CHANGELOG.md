@@ -2,6 +2,19 @@
 
 All notable changes to Research PDF File Renamer are documented here.
 
+## [0.4.5] - 2026-06-25
+
+### Changed
+
+- **Per-session file limit for approved users raised 30 → 100.** `User.get_max_files()` default; admin per-user overrides (`max_files_per_session`) still apply. Surfaced to the UI via `/api/limits`.
+- **Whole-request upload ceiling raised to 5000 MB** (`MAX_CONTENT_LENGTH`), sized for 100 files × 50 MB. Requires nginx `client_max_body_size 5000M` (server-side; see docs/deployment.md).
+- **Per-file 50 MB cap decoupled from the request ceiling.** New `MAX_FILE_SIZE` (default 50 MB) drives `FileService.validate_file`; previously the per-file cap reused `MAX_CONTENT_LENGTH`, so raising the request ceiling would have silently allowed 5 GB single files. Now they're independent.
+
+### Added
+
+- **Multi-folder upload.** The folder picker now *accumulates* (add folders one at a time), and drag-dropping several folders at once works via recursive FileSystem-entry traversal. Subfolders were always included by the picker; drag-drop now recurses too.
+- **Folder uploads preserve the directory tree in the output ZIP.** Renamed files are placed under their original subfolder paths (e.g. `projectA/sub/Hribar-Jason_2023_Journal_kw.pdf`) instead of being flattened. Driven by the `preserve_structure` flag the folder UI already sends.
+
 ## [0.4.4] - 2026-06-25
 
 ### Fixed

@@ -39,14 +39,14 @@ class User(UserMixin, db.Model):
 
         Returns:
             - User's custom limit if set (max_files_per_session)
-            - 30 for approved users (including admins)
+            - 100 for approved users (including admins)
             - 5 for unapproved registered users
         """
         # Use user-specific limit if explicitly set
         if self.max_files_per_session is not None:
             return self.max_files_per_session
-        # Default: 30 for approved users, 5 for unapproved
-        return 30 if self.is_approved else 5
+        # Default: 100 for approved users, 5 for unapproved
+        return 100 if self.is_approved else 5
 
     def is_user_active(self):
         """Check if user is active (approved, active, and not deactivated)."""

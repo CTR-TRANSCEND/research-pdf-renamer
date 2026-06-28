@@ -141,8 +141,10 @@ class FileService:
         self.config = config or {}
         self.upload_folder = self.config.get("UPLOAD_FOLDER") or "uploads"
         self.temp_folder = self.config.get("TEMP_FOLDER") or "temp"
-        self.max_content_length = (
-            self.config.get("MAX_CONTENT_LENGTH") or 50 * 1024 * 1024
+        # Per-file cap (NOT the whole-request MAX_CONTENT_LENGTH, which is much
+        # larger to allow a full multi-file session). validate_file() enforces this.
+        self.max_file_size = (
+            self.config.get("MAX_FILE_SIZE") or 50 * 1024 * 1024
         )  # 50MB per file
         self.chunk_size = 64 * 1024  # 64KB chunks for streaming
 
@@ -391,10 +393,10 @@ class FileService:
         size = file.tell()
         file.seek(0)
 
-        if size > self.max_content_length:
+        if size > self.max_file_size:
             return (
                 False,
-                f"File too large. Maximum size is {self.max_content_length / (1024 * 1024):.1f}MB",
+                f"File too large. Maximum size is {self.max_file_size / (1024 * 1024):.1f}MB",
             )
 
         if size == 0:

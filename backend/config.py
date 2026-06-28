@@ -89,8 +89,15 @@ class Config:
     SESSION_COOKIE_SAMESITE = "Lax"  # Allow cookies for top-level navigations
     REMEMBER_COOKIE_SAMESITE = "Lax"
 
-    # Upload size limit (500MB per request body, enforced at the WSGI layer)
-    MAX_CONTENT_LENGTH = int(os.environ.get("MAX_CONTENT_LENGTH", 500 * 1024 * 1024))
+    # Whole-request body limit (enforced at the WSGI layer). Sized for a full
+    # session: up to 100 files x 50MB = ~5000MB. Keep nginx client_max_body_size
+    # in sync (see docs/deployment.md).
+    MAX_CONTENT_LENGTH = int(os.environ.get("MAX_CONTENT_LENGTH", 5000 * 1024 * 1024))
+
+    # Per-file size cap (independent of the whole-request cap above). A single
+    # PDF may not exceed this. Decoupled from MAX_CONTENT_LENGTH so the request
+    # ceiling can grow without weakening the per-file limit.
+    MAX_FILE_SIZE = int(os.environ.get("MAX_FILE_SIZE", 50 * 1024 * 1024))
 
     # LLM settings
     # Default to Ollama (local LLM) - can be overridden by environment variables or database settings
