@@ -7,6 +7,7 @@ live in logs/. Newest first.
 - logs/PROJECT_LOG_2026-H1.md — 2 sessions (2026-04-08)
 
 ## Session Index (active, newest first)
+- 2026-06-28 16:27 CDT — Filename placeholder consistency (v0.4.4) + 100-file/5GB limits, decoupled per-file cap, multi-folder + structure-preserving output (v0.4.5)
 - 2026-06-25 13:45 CDT — Upload-size + processing-failure fixes + LastName-FirstName default (v0.4.1 → v0.4.3)
 - 2026-04-29 CDT — Full harness code review & fix (index mismatch, health 429, LLM extra fields)
 - 2026-04-27 22:09 CDT — Adversarial review batches 1-2 + hotfix (v0.3.4 → v0.3.5)
@@ -14,6 +15,54 @@ live in logs/. Newest first.
 - 2026-04-27 (session 3) — CR-1…CR-5 implementation + v0.3.7 release
 
 ---
+
+## Session 2026-06-28 16:27 CDT (v0.4.4 placeholder consistency + v0.4.5 limits/folders)
+
+- **Coding CLI used:** Claude Code CLI (Claude Opus 4.8)
+- **Phase(s):** Two user-driven fixes/features shipped + deployed + verified
+
+### v0.4.4 — filename placeholder consistency (commit 134069c)
+- User reported `Tu-Tao_2024_diagnosticAI-LLM-selfplay` (3 sections) — a missing journal was being DROPPED, misaligning the `_`-separated slots. This reversed the v0.4.2 "omit empty components" decision.
+- `LLMService.build_filename`: every field now falls back to the literal `Unknown` placeholder instead of being omitted → `Tu-Tao_2024_Unknown_diagnosticAI-LLM-selfplay`. Applies to all preset + Custom formats.
+- Deployed; container-verified (no-journal → Unknown slot kept; full case unchanged).
+
+### v0.4.5 — limits + multi-folder + structure-preserving output (commit 187922a)
+- **Per-session limit 30 → 100** for approved users (`User.get_max_files`); admin per-user overrides still apply.
+- **Whole-request ceiling 500MB → 5000MB** (`MAX_CONTENT_LENGTH`, sized for 100×50MB) + nginx `client_max_body_size 5000M` (+ `proxy_read_timeout 300→600`).
+- **Decoupled per-file cap:** new `MAX_FILE_SIZE` (50MB) drives `FileService.validate_file` — previously the per-file cap reused `MAX_CONTENT_LENGTH`, so bumping the request ceiling would have silently allowed 5GB single files. Renamed `FileService.max_content_length` → `max_file_size`.
+- **Multi-folder upload:** picker now accumulates (add folders one-by-one); drag-dropping several folders recurses via FileSystem entry API (`webkitGetAsEntry` + `_collectEntry`/`_readAllEntries`). Subfolders were always included by the webkitdirectory picker.
+- **Folder output preserves directory tree:** ZIP arcname = original subfolder path + renamed file, gated by the `preserve_structure` flag the UI already sends. Threaded `preserve_structure` through `_process_files_background`.
+- Frontend size caps: 50MB/file hard, 1GB warn, 5GB total hard.
+
+### Files/modules touched
+- `backend/config.py` (MAX_CONTENT_LENGTH 5000MB + new MAX_FILE_SIZE)
+- `backend/models/user.py` (get_max_files 30→100)
+- `backend/services/file_service.py` (max_file_size rename + per-file cap)
+- `backend/services/llm_service.py` (build_filename placeholders)
+- `backend/routes/upload.py` (preserve_structure flag + ZIP arcname structure)
+- `frontend/static/js/main.js` (size caps, addFolderItems accumulate, recursive folder drag-drop)
+- `frontend/templates/index.html` (folder zone text), `docs/deployment.md`, `CHANGELOG.md`, `backend/version.py`
+
+### Key decisions
+- Reversed v0.4.2 omit-empty → placeholder-keep, per user's consistency requirement.
+- Decoupled per-file vs whole-request size — a latent bug if left coupled when raising the ceiling.
+- Multi-folder: picker accumulates (browser dialogs only allow one dir per pick); drag-drop recurses via entry API. Output mirrors input tree per user's choice.
+
+### Problems / notes
+- Deploy quality gate (moai pre-tool pytest) is intermittent and pytest can't collect locally (no flask deps in dev tree — they live in the Docker image). v0.4.4/v0.4.5 commits went through without bypass this time.
+- Caveat carried forward: 100 files / up to 5GB on the single gunicorn worker + 30-min temp sweeper could clip jobs running >30 min. Proper fix = v0.5.0 (Redis jobs + async I/O).
+
+### Verification (container + nginx, 2026-06-28)
+- v0.4.4: `build_filename` no-journal → `Tu-Tao_2024_Unknown_diagnosticAI-LLM-selfplay.pdf`; full → `Hribar-Jason_2023_Ophthalmology_OMOP-CDM.pdf`.
+- v0.4.5: version 0.4.5; `MAX_CONTENT_LENGTH=5000MB MAX_FILE_SIZE=50MB`; approved-user limit 100; nginx pdf-renamer `client_max_body_size 5000M` + `proxy_read_timeout 600` (admin :8443 50M, /coai 300M untouched); `nginx -t` OK + reload; health healthy.
+
+### Commits (pushed to origin/main)
+- `134069c` v0.4.4 — keep Unknown placeholder for missing filename fields
+- `187922a` v0.4.5 — 100-file/5GB limits, decoupled per-file cap, multi-folder + structure-preserving output
+
+### Next (user-driven)
+- Real-world: multi-folder upload (accumulate + drag several) with subfolders → confirm ZIP mirrors tree; batch >30 files.
+- Deferred (unchanged): hot-path tests; v0.5.0 (Redis jobs, async LLM I/O, LLMService split); GHCR re-login on server.
 
 ## Session 2026-06-25 13:45 CDT (Upload-size + processing-failure fixes + LastName-FirstName, v0.4.1 → v0.4.3)
 
