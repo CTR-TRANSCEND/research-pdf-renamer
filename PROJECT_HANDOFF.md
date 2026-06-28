@@ -10,7 +10,7 @@ AI-powered web application that automatically renames research PDF files using L
 - **Current version:** 0.4.5 (commit `187922a`)
 - **Last updated:** 2026-06-28 16:27 CDT (100-file/5GB limits + multi-folder + structure-preserving output; filename placeholder consistency)
 - **Last coding CLI used:** Claude Code CLI (Claude Opus 4.8)
-- **Related wiki:** `~/PROJECTS/wiki/concept/hurlab-https-outage` (the recurring HTTPS issue, root-caused + fixed May 2026); `concept/flask-limiter-behind-reverse-proxy` (the rate-limit gotcha behind this session's "Lost connection" fix).
+- **Related wiki:** `~/PROJECTS/wiki/concept/hurlab-https-outage` (the recurring HTTPS issue, root-caused + fixed May 2026); `concept/flask-limiter-behind-reverse-proxy` (the rate-limit "Lost connection" gotcha); `concept/browser-folder-upload-recursion-and-limits` (folder upload recursion + per-file vs request size-limit decoupling, from v0.4.5).
 
 ## 2. Current State
 
