@@ -2,6 +2,14 @@
 
 All notable changes to Research PDF File Renamer are documented here.
 
+## [0.4.7] - 2026-06-28
+
+### Fixed
+
+- **A valid author/title is no longer discarded when year or journal is missing.** Root cause (found via live-container logs): the model correctly returned e.g. `{"author":"Toro","author_first":"Sabrina","title":"...","keywords":"ontology-generation,...","year":"","journal":""}` for a preprint with no year/journal on its first page — but the strict `PaperMetadata` schema **hard-required a 4-digit `year`** (and non-empty `keywords`/`suggested_filename`), so `validate_year("")` raised and the *entire* extraction was rejected. After exhausting retries the result fell to the lenient fallback and surfaced as `Unknown_Unknown_Unknown_paper.pdf` even though the author was right there on page 1.
+- `PaperMetadata` now **coerces** missing/blank `year` → `Unknown` (mirroring the existing `journal` behavior) and treats `title`/`keywords`/`suggested_filename` as optional. `author` remains the single required field (an author-less response still triggers retry/lenient). The filename is rebuilt from the surviving fields by `build_filename()`, so a preprint now yields e.g. `Toro-Sabrina_Unknown_Unknown_ontology-generation-LLM-retrieval-augmented.pdf` instead of all-`Unknown`. Papers that do carry a year/journal are unaffected.
+- This complements v0.4.6 (which fixed metadata-rich papers by getting the citation into the prompt); together they cover both "the year was truncated away" and "the year genuinely isn't on page 1".
+
 ## [0.4.6] - 2026-06-28
 
 ### Fixed

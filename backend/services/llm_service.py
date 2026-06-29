@@ -41,11 +41,18 @@ class PaperMetadata(BaseModel):
     author_first: str = Field(
         default="", description="Primary author's first name (optional, may be empty)"
     )
-    year: str = Field(..., min_length=4, max_length=4, description="Publication year (YYYY)")
-    journal: str = Field(..., min_length=1, description="Journal name")
-    title: str = Field(..., min_length=1, description="Paper title")
-    keywords: str = Field(..., min_length=1, description="Comma-separated keywords")
-    suggested_filename: str = Field(..., min_length=1, description="Generated filename")
+    # year/journal/keywords/suggested_filename are coerced, NOT hard-required:
+    # a paper may legitimately lack a year or journal on its first page (e.g.
+    # preprints), in which case the LLM correctly returns "". Hard-failing here
+    # would discard an otherwise-good extraction (author + title + keywords) and
+    # force the result down the lenient fallback. Author is the one truly
+    # required field; everything else falls back to "Unknown"/empty and the
+    # filename is rebuilt downstream by build_filename().
+    year: str = Field(default="Unknown", description="Publication year (YYYY) or 'Unknown'")
+    journal: str = Field(default="Unknown", description="Journal name")
+    title: str = Field(default="Unknown", description="Paper title")
+    keywords: str = Field(default="", description="Comma-separated keywords")
+    suggested_filename: str = Field(default="", description="Generated filename (rebuilt downstream)")
 
     @field_validator("keywords", mode="before")
     @classmethod
@@ -80,22 +87,41 @@ class PaperMetadata(BaseModel):
             return "Unknown"
         return v
 
+    @field_validator("title", mode="before")
+    @classmethod
+    def coerce_title(cls, v):
+        """Treat a blank/missing title as 'Unknown' rather than failing — a missing
+        secondary field must never discard an otherwise-good (author-bearing)
+        extraction."""
+        if v is None or (isinstance(v, str) and not v.strip()):
+            return "Unknown"
+        return v
+
     @field_validator("year", mode="before")
     @classmethod
     def validate_year(cls, v) -> str:
-        """Coerce int to str (LLMs often omit quotes). Reject non-numeric or out-of-range."""
-        v = str(v).strip()
+        """Coerce int to str (LLMs often omit quotes). A non-numeric or
+        out-of-range year (including an empty string when the paper has no year
+        on its first page) becomes 'Unknown' instead of raising, so the rest of
+        the extraction survives. Mirrors coerce_journal."""
+        v = str(v or "").strip()
         if not v.isdigit():
-            raise ValueError("Year must be numeric")
+            return "Unknown"
         year_int = int(v)
         if year_int < 1900 or year_int > 2100:
-            raise ValueError("Year must be between 1900 and 2100")
+            return "Unknown"
         return v
 
     @field_validator("suggested_filename")
     @classmethod
     def validate_filename(cls, v: str) -> str:
-        """Ensure filename is safe and ends with .pdf. Auto-sanitize common issues."""
+        """Ensure filename is safe and ends with .pdf. Auto-sanitize common issues.
+
+        An empty value is allowed: upload.py always rebuilds the filename from the
+        validated fields via build_filename(), using suggested_filename only as a
+        fallback — so the LLM omitting it must not fail validation."""
+        if not v or not v.strip():
+            return ""
         if not v.lower().endswith(".pdf"):
             v = v.rstrip(".") + ".pdf"
         name = v[:-4]  # strip .pdf
