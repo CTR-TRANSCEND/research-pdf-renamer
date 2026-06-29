@@ -363,16 +363,37 @@ def _process_files_background(app, job_id, saved_files, llm_svc, file_svc, pdf_p
                 pdf_fields = pdf_proc.extract_pdf_metadata_fields(filepath)
             except Exception:
                 pdf_fields = {}
-            if pdf_fields:
-                if _is_blank(metadata.get("author")) and pdf_fields.get("author"):
+
+            # Author is the one field we truly need. The LLM is non-deterministic
+            # and intermittently returns an all-blank object even when the author
+            # is plainly on page 1; cover that with two ordered fallbacks:
+            #   1) the PDF's embedded author property, then
+            #   2) a best-effort parse of the author line from the page text.
+            if _is_blank(metadata.get("author")):
+                if pdf_fields.get("author"):
                     metadata["author"] = pdf_fields["author"]
                     metadata["author_first"] = pdf_fields.get("author_first", "")
-                if _is_blank(metadata.get("keywords")) and pdf_fields.get("keywords"):
-                    metadata["keywords"] = pdf_fields["keywords"]
-                if _is_blank(metadata.get("title")) and pdf_fields.get("title"):
-                    metadata["title"] = pdf_fields["title"]
-                if _is_blank(metadata.get("year")) and pdf_fields.get("year"):
-                    metadata["year"] = pdf_fields["year"]
+                else:
+                    try:
+                        text_author = pdf_proc.extract_author_from_text(text)
+                    except Exception:
+                        text_author = {}
+                    if text_author.get("author"):
+                        metadata["author"] = text_author["author"]
+                        metadata["author_first"] = text_author.get("author_first", "")
+
+            if _is_blank(metadata.get("keywords")) and pdf_fields.get("keywords"):
+                metadata["keywords"] = pdf_fields["keywords"]
+            if _is_blank(metadata.get("title")) and pdf_fields.get("title"):
+                metadata["title"] = pdf_fields["title"]
+            if _is_blank(metadata.get("year")) and pdf_fields.get("year"):
+                metadata["year"] = pdf_fields["year"]
+
+            # Drop the lenient parser's "paper" keyword sentinel when no real
+            # keywords were recovered, so the slot renders a consistent "Unknown"
+            # placeholder instead of the misleading literal "paper".
+            if str(metadata.get("keywords", "")).strip() == "paper":
+                metadata["keywords"] = ""
 
             # Post-processing and renaming
             _update_file_stage(file_info, "renaming")

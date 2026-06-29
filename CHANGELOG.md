@@ -2,6 +2,13 @@
 
 All notable changes to Research PDF File Renamer are documented here.
 
+## [0.4.8] - 2026-06-29
+
+### Fixed
+
+- **Author is now recovered even when the LLM returns a blank extraction.** Live logs showed gpt-oss-20b is non-deterministic: for the same PDF it sometimes returns a full extraction and sometimes an all-empty object (`{"author":"", ...}`) on every retry. A blank `author` legitimately fails validation, so such uploads fell through to all-`Unknown` despite the author being plainly on page 1. Added a deterministic safety net in `_process_files_background`: when the LLM yields no author, fall back to (1) the PDF's embedded author property, then (2) a best-effort parse of the author line from the page-1 text (`PDFProcessor.extract_author_from_text`, which targets the common `Title → Author1, Author2 …` layout with superscript affiliations). Result: a paper whose author the LLM dropped now still yields e.g. `Toro-Sabrina_Unknown_Unknown_Unknown.pdf` instead of `Unknown_Unknown_Unknown_paper.pdf`.
+- The lenient parser's `"paper"` keyword sentinel is now normalised to a consistent `Unknown` slot when no real keywords were recovered (no more misleading `..._paper.pdf`).
+
 ## [0.4.7] - 2026-06-28
 
 ### Fixed

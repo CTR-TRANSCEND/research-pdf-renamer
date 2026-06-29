@@ -404,6 +404,50 @@ class PDFProcessor:
 
         return out
 
+    def extract_author_from_text(self, text: str) -> Dict[str, str]:
+        """Last-resort first-author parse from the extracted page text, for when
+        the LLM returns no author AND the PDF metadata has none (e.g. a
+        Google-Docs export with an empty author property). Targets the common
+        layout where the author line sits just below the title and carries
+        superscript affiliation markers, e.g.:
+
+            Sabrina Toro1, Anna V Anagnostopoulos2, Sue Bello2, ...
+
+        Returns {'author': last, 'author_first': first} or {} if nothing
+        confidently name-like is found. Best-effort, never raises.
+        """
+        if not text:
+            return {}
+        try:
+            body = text.split("--- Page 1 ---", 1)[-1]
+            low = body.lower()
+            cuts = [i for i in (low.find("abstract"), low.find("a b s t r a c t")) if i != -1]
+            if cuts:
+                body = body[: min(cuts)]
+            affil = re.compile(
+                r"University|Institute|Department|Laborator|College|Cent(er|re)|"
+                r"Hospital|School|Division|Foundation|National|@|\.edu|\.org|Corresponding"
+            )
+            for ln in [l.strip() for l in body.splitlines() if l.strip()][:25]:
+                if affil.search(ln):
+                    continue
+                # An author line in a multi-author paper carries a comma (author
+                # separator) AND a digit (superscript affiliation marker); this
+                # distinguishes it from title lines.
+                if "," not in ln or not re.search(r"\d", ln):
+                    continue
+                first_chunk = re.split(r"[,;]| and ", ln)[0].strip()
+                # Strip trailing superscript markers attached to names (Toro1 -> Toro).
+                cand = re.sub(r"(?<=[A-Za-z])[\d\*†‡]+", "", first_chunk).strip()
+                toks = cand.split()
+                if 2 <= len(toks) <= 4 and all(
+                    re.match(r"^[A-Z][A-Za-z.'\-]*$", t) for t in toks
+                ):
+                    return {"author": toks[-1], "author_first": toks[0]}
+        except Exception as e:
+            logger.debug(f"extract_author_from_text failed: {e}")
+        return {}
+
     def _get_file_hash(self, pdf_path: str) -> str:
         """Calculate SHA256 hash of PDF file for caching."""
         try:
