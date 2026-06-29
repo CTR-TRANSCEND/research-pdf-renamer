@@ -7,8 +7,8 @@ AI-powered web application that automatically renames research PDF files using L
 - **Repository:** https://github.com/CTR-TRANSCEND/research-pdf-renamer
 - **Docker Image:** ghcr.io/ctr-transcend/research-pdf-renamer
 - **Production URL:** https://hurlab.med.und.edu/pdf-renamer/ (HTTPS working; the recurring cert/HTTPS issue was root-caused + fixed May 2026 — see Risks + wiki)
-- **Current version:** 0.4.5 (commit `187922a`)
-- **Last updated:** 2026-06-28 16:27 CDT (100-file/5GB limits + multi-folder + structure-preserving output; filename placeholder consistency)
+- **Current version:** 0.4.6 (commit `339cc63`)
+- **Last updated:** 2026-06-28 17:2x CDT (v0.4.6 extraction fix: recover author/year/journal on metadata-rich PDFs — abstract cap + 8000-char budget + PDF-metadata fallback)
 - **Last coding CLI used:** Claude Code CLI (Claude Opus 4.8)
 - **Related wiki:** `~/PROJECTS/wiki/concept/hurlab-https-outage` (the recurring HTTPS issue, root-caused + fixed May 2026); `concept/flask-limiter-behind-reverse-proxy` (the rate-limit "Lost connection" gotcha); `concept/browser-folder-upload-recursion-and-limits` (folder upload recursion + per-file vs request size-limit decoupling, from v0.4.5).
 
@@ -24,6 +24,7 @@ AI-powered web application that automatically renames research PDF files using L
 | **v0.4.3: LastName-FirstName author default** | **Completed 2026-06-25** | LLM extracts primary author first name (`author_first`); filenames always built from fields → `Hribar-Jason_2023_Journal_keywords`. All presets + Custom + UI labels updated. Commit `678623a`. Live + verified. |
 | **v0.4.4: filename placeholder consistency** | **Completed 2026-06-28 16:27 CDT** | Missing fields keep `Unknown` placeholder (reversed v0.4.2 omit) → `Tu-Tao_2024_Unknown_diagnosticAI-LLM-selfplay`. Commit `134069c`. Live + verified. |
 | **v0.4.5: 100-file/5GB limits + multi-folder + structure output** | **Completed 2026-06-28 16:27 CDT** | Per-session 30→100; request ceiling 5000MB + nginx 5000M; per-file 50MB decoupled (`MAX_FILE_SIZE`); multi-folder accumulate + recursive drag-drop; ZIP mirrors input tree. Commit `187922a`. Live + verified. |
+| **v0.4.6: recover author/year/journal on metadata-rich PDFs** | **Deployed 2026-06-28 (live, container-verified; user re-upload pending)** | Root cause: text truncated to 3000 chars + the PDF `subject` (often the full abstract) injected ahead of page text pushed the title-page citation (journal+year) past the cap → LLM returned blank → `Unknown_Unknown_Unknown_paper.pdf`. Fix: cap injected subject @300; `MAX_TEXT_LENGTH` 3000→8000; new `PDFProcessor.extract_pdf_metadata_fields()` backfills author/title/keywords/year from PDF properties when the LLM misses them (`upload.py`). Verified on the real failing PDF: now `Langevin-Stephanie_2022_Int-J-Environ-Res-Public-Health_...`. Commits `0c17d13` + `339cc63`. |
 | All v0.3.5 critical/high/medium adversarial review items | Completed | 16 fixes — commits cb6ae8d + c755f2e |
 | All v0.3.5 follow-on hotfix items (independent review batch) | Completed | 5 fixes — commit b517792 |
 | All v0.3.6 hardening items (post-v0.3.5 review) | Completed | 7 parallel implementers — commit d45bc86 |
@@ -56,7 +57,7 @@ AI-powered web application that automatically renames research PDF files using L
 
 | Item | Status | Last Updated | Reference |
 |---|---|---|---|
-| **End-to-end real PDF upload smoke test (v0.4.5)** | In progress (user-driven) | 2026-06-28 16:27 CDT | Pending user confirmation on v0.4.5: (a) multi-folder upload — add 2+ folders / drop several, with subfolders → ZIP mirrors input tree; (b) batch >30 files now allowed; (c) missing-journal filenames show `Unknown` slot. Prior fixes (disconnect, LastName-FirstName) believed good. See Session 2026-06-28. |
+| **End-to-end real PDF upload smoke test (v0.4.6)** | In progress (user-driven) | 2026-06-28 | Pending user re-upload on v0.4.6 of the two PDFs that exposed the bug: Langevin paper should now yield `Langevin-Stephanie_2022_<journal>_...` (was `Unknown_Unknown_Unknown_paper`); DRAGON-AI preprint keeps author+keywords with `Unknown` year/journal (honest — not on page 1). Also still-open from v0.4.5: multi-folder ZIP-mirrors-tree + batch >30. See Session 2026-06-28 (v0.4.6). |
 | **Tests for hot paths** | Not started | 2026-04-27 | No coverage for `LLMService._parse_response` (per-provider shapes including reasoning_content fallback) or per-file stage updates in `_process_files_background`. |
 | **Anonymous-user code path decision** | Open | 2026-04-27 | The codebase supports anonymous uploads (5-file limit, IP-based rate limit on `Usage`). Either keep or commit to auth-required + delete. Not blocking. |
 | **v0.4.0 architecture refactors** | Not started | 2026-04-27 | (a) Job state → Redis (multi-worker). (b) Async LLM I/O via httpx.AsyncClient + semaphore. (c) Split LLMService 939-line file per-provider. (d) Multi-stage pyproject migration if desired. |
@@ -104,7 +105,7 @@ AI-powered web application that automatically renames research PDF files using L
 
 ## 7. Restart Instructions
 
-- **Starting point:** Tip of `main` is commit `187922a` (v0.4.5). Version `0.4.5`.
+- **Starting point:** Tip of `main` is commit `339cc63` (v0.4.6; `0c17d13` is the fix, `339cc63` gitignores `tmp/`). Version `0.4.6`, live in production (container-verified).
 - **Deploy dir (server):** `/home/hurlab/PROJECTS/research-pdf-renamer` (owned by `hurlab`; has the gitignored `docker-compose.override.yml`). The `~/PROJECTS/research-pdf-renamer` in the build steps below means THIS path. `/data/juhurSync/.../10_apps/...` is only the rsync mirror — not the deployment.
 - **Privileged ops:** `juhur` is not in the `docker` group and sudo needs an interactive password. Run docker/nginx/deploy via a script placed in `/home/juhur/tmp/` that the user executes; read results back over SSH. Never use `! sudo` (does not work in Claude Code CLI).
 - **Live deployment:** v0.4.2 at https://hurlab.med.und.edu/pdf-renamer/ via `docker-compose.override.yml`. HTTPS works (the recurring outage was root-caused to a stray iptables `:443→:8080` REDIRECT in `/etc/ufw/before.rules` + `rules.v4` and durably fixed May 2026 — see wiki `concept/hurlab-https-outage`).

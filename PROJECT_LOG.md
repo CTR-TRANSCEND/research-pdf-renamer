@@ -7,6 +7,7 @@ live in logs/. Newest first.
 - logs/PROJECT_LOG_2026-H1.md — 2 sessions (2026-04-08)
 
 ## Session Index (active, newest first)
+- 2026-06-28 17:2x CDT — Extraction bug fix (v0.4.6): metadata-rich PDFs lost author/year/journal due to 3000-char truncation + abstract crowding the prompt; fixed via abstract cap + 8000-char budget + PDF-metadata fallback
 - 2026-06-28 16:27 CDT — Filename placeholder consistency (v0.4.4) + 100-file/5GB limits, decoupled per-file cap, multi-folder + structure-preserving output (v0.4.5)
 - 2026-06-25 13:45 CDT — Upload-size + processing-failure fixes + LastName-FirstName default (v0.4.1 → v0.4.3)
 - 2026-04-29 CDT — Full harness code review & fix (index mismatch, health 429, LLM extra fields)
@@ -15,6 +16,40 @@ live in logs/. Newest first.
 - 2026-04-27 (session 3) — CR-1…CR-5 implementation + v0.3.7 release
 
 ---
+
+## Session 2026-06-28 17:2x CDT (v0.4.6 — extraction fix for metadata-rich PDFs)
+
+- **Coding CLI used:** Claude Code CLI (Claude Opus 4.8)
+- **Phase(s):** User-reported bug → diagnosis from real PDFs → fix → deploy → live verify
+
+### Symptom
+User uploaded two "easy" PDFs; the renamer returned `Toro-Sabrina_Unknown_Unknown_ontology-...` (author only) and `Unknown_Unknown_Unknown_paper.pdf` (everything blank).
+
+### Root cause (diagnosed from the actual PDFs + confirmed live config)
+- Extracted PDF text is hard-truncated to `MAX_TEXT_LENGTH` = **3000 chars** before the LLM call (confirmed live: provider `openai-compatible`, model `openai/gpt-oss-20b`, url `http://100.67.76.96:1234`).
+- `PDFProcessor._build_metadata_header` injects the PDF `subject` property *ahead* of page text. For LaTeX/MDPI PDFs `subject` holds the **entire abstract** (~2500 chars). For the Langevin paper this pushed the title-page `Citation:` line (`Int. J. Environ. Res. Public Health 2022, 19, 14402`) and the keywords/year **past the 3000-char cut** — the LLM never saw journal/year and returned a blank extraction → lenient fallback produced `Unknown_..._paper` (keyword default "paper", `llm_service.py:1064`).
+- DRAGON-AI is a 31-page Google-Docs preprint: journal/year are genuinely absent from page 1 and from PDF metadata, so `Unknown` there is honest. Author worked (on page 1).
+- Confirmed measured char offsets locally with pymupdf (the app extracts effectively page 1 only — breaks at `len(page_text)>500`, `pdf_processor.py:298`).
+- NOTE: the per-job container logs were unrecoverable — the container had been recreated ~3 min after the upload (16:23 job vs 16:26 gunicorn restart), wiping stdout + in-memory job state (the known single-worker limitation).
+
+### Fix (commit 0c17d13)
+- `_build_metadata_header`: cap injected `subject`/abstract at **300 chars**.
+- `MAX_TEXT_LENGTH` **3000 → 8000** (`config.py` new key + `llm_service.py` default).
+- New `PDFProcessor.extract_pdf_metadata_fields()`: parses author (first-author last/first), title, keywords (`;`/`,`-split), and a last-resort creation-year from PDF properties.
+- `upload.py` `process_one_file`: backfills blank/`Unknown`/`paper` author/title/keywords/year from those PDF fields (LLM result still wins when present).
+
+### Verification
+- Local (real PDFs, standalone-loaded real module): after fix, Langevin extracted text 8414→5888 chars (header shrank ~2900→~700); `Keywords`/`Publication year`/`2022`/`Citation` now all within the 8000 budget; `extract_pdf_metadata_fields` → `author=Langevin, author_first=Stephanie, keywords=…, year=2022, title=…`. Citation block now visible to LLM contains journal `Int. J. Environ. Res. Public Health` + year 2022.
+- `py_compile` OK on all 4 changed modules.
+- Deployed (commit 339cc63 after gitignoring `tmp/`): container `version: 0.4.6`, `MAX_TEXT_LENGTH=8000`, health healthy. Image `sha256:02d815ca…`.
+
+### Commits
+- `0c17d13` fix: recover author/year/journal on metadata-rich PDFs (v0.4.6)
+- `339cc63` chore: gitignore `tmp/` (local test PDFs + scratch scripts)
+
+### Next (user-driven)
+- Re-upload the two PDFs on v0.4.6: Langevin → `Langevin-Stephanie_2022_<journal>_…`; DRAGON-AI → author+keywords, `Unknown` year/journal (honest).
+- Deferred (unchanged): hot-path tests; v0.5.0 (Redis jobs, async LLM I/O, LLMService split); GHCR re-login. Consider extracting >1 page or reading XMP for preprints (would help DRAGON-AI-style files) — optional future enhancement.
 
 ## Session 2026-06-28 16:27 CDT (v0.4.4 placeholder consistency + v0.4.5 limits/folders)
 
