@@ -343,3 +343,6 @@ verify-*.png
 after-*.png
 folder-modal-*.png
 register-modal-*.png
+
+# No-paste resume prompt (machine-local, per-session)
+/NEXT_SESSION.md

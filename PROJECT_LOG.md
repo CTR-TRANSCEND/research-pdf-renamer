@@ -75,6 +75,13 @@ My v0.4.9 verification measured `build_filename` **in isolation** and reported "
 ### Deploy note (ownership)
 The agent's read-only `git fetch` in the deploy dir created 16 `juhur`-owned files under `.git` — a small drift the agent had said it would avoid. Corrected in place (`chgrp -R hurlab` + group-write on dirs, which juhur may do as a group member); the ref *directory* — the part that matters for a later `hurlab` fetch, since git writes a lock file there and renames — is `hurlab`-owned and group-writable. Working-tree files stayed `hurlab:hurlab` throughout. **Takeaway for next time: even a read-only `git fetch` writes objects; run it as `hurlab` or expect to fix up the group afterward.**
 
+### Session close (2026-08-19 13:35 CDT)
+- **Shipped + live:** v0.4.10 at `087459c`, container healthy, health endpoint reports `0.4.10`. Working tree clean; `origin/main` 0/0.
+- **NOT verified:** no real PDF has gone through the live app since the fix. In-container checks used synthetic metadata plus the user's exact reported filename. First action next session is the user's real-PDF confirmation.
+- **Cross-project wiki (3 new pages):** `concept/a-parity-claim-inherits-its-measurement-boundary` (the 36/36 claim was true of a function and false of the product — measure at the boundary the user observes), `concept/an-added-element-must-not-share-the-existing-budget` (additive-vs-competing in a capped slot; `break` vs `continue` in a budget fill; fixtures need a deliberately oversized item), `concept/probe-the-privilege-envelope-dont-inherit-it` (the stale docker-group line; ownership-not-privilege deploy split; setgid; a read-only fetch still writes). All three linked from HANDOFF §1.
+- **Still undecided (carried):** the untracked MoAI template scaffolding (`.github/`, `.git_hooks/`, `.claudeignore`, `.worktreeinclude`) and whether to restore `!logs/PROJECT_LOG_*.md` to `.gitignore` — the same refresh dropped it, so newly rotated archives would be silently ignored (the existing archive is already tracked, so nothing is lost today).
+- **💡 Idea:** none this session. The one durable follow-up is a project SPEC, not a new project — a golden-file test that runs the whole rename pipeline; recorded in HANDOFF §4 with its priority raised rather than captured as an idea.
+
 ### Commits (pushed to origin/main)
 - `5a9907d` feat — include the paper's named tool in the filename (v0.4.9)
 - `3c09141` docs — record v0.4.9 deploy; correct stale privileged-ops instructions
