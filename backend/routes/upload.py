@@ -395,6 +395,18 @@ def _process_files_background(app, job_id, saved_files, llm_svc, file_svc, pdf_p
             if str(metadata.get("keywords", "")).strip() == "paper":
                 metadata["keywords"] = ""
 
+            # Recover the paper's named tool/method (e.g. "MFS-MUnet") from the
+            # title when the LLM did not report one — same LLM-wins-then-
+            # deterministic-net pattern used for the author above. Papers that
+            # introduce no named tool correctly yield "" and are unaffected.
+            if _is_blank(metadata.get("tool_name")):
+                try:
+                    metadata["tool_name"] = pdf_proc.extract_tool_name_from_title(
+                        metadata.get("title", "")
+                    )
+                except Exception:
+                    metadata["tool_name"] = ""
+
             # Post-processing and renaming
             _update_file_stage(file_info, "renaming")
 

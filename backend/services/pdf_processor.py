@@ -448,6 +448,77 @@ class PDFProcessor:
             logger.debug(f"extract_author_from_text failed: {e}")
         return {}
 
+    # Leading words that look like a tool name to the regex but are article-type
+    # or section labels. "Review: ..." must not become a tool called "Review".
+    _NOT_A_TOOL = frozenset(
+        """review correction erratum editorial comment commentary reply response
+        letter perspective preface update note article report study abstract
+        introduction background methods results discussion conclusion summary
+        chapter part section appendix supplementary supplement author authors
+        title objective purpose aim aims rationale case cases protocol errata
+        addendum retraction highlights keywords news views obituary""".split()
+    )
+
+    def extract_tool_name_from_title(self, title: str) -> str:
+        """Best-effort parse of the named tool/method/software a paper introduces.
+
+        Papers that contribute a named artifact almost always put the name in the
+        title, either leading a colon or parenthesized:
+
+            "MFS-MUnet: Multi-scale Frequency Spatial Mamba U-Net for ..."  -> MFS-MUnet
+            "DESeq2: moderated estimation of fold change ..."               -> DESeq2
+            "A deep model for segmentation (nnU-Net) trained on ..."        -> nnU-Net
+
+        This is the deterministic net behind the LLM's own ``tool_name`` field —
+        the model intermittently returns an all-blank object (see v0.4.8), and
+        this recovers the name from the title in that case. Conservative by
+        design: it would rather return "" than invent a name, since a wrong tool
+        name is more damaging in a filename than an absent one.
+
+        Returns the name exactly as written, or "" when the title names no tool.
+        Best-effort, never raises.
+        """
+        if not title:
+            return ""
+        try:
+            text = str(title).strip()
+
+            def _plausible(candidate: str) -> bool:
+                """A tool name is short, not an ordinary word, and carries a
+                capital or a digit — "MFS-MUnet"/"DESeq2" pass, "segmentation"
+                and "Review" do not."""
+                if not (3 <= len(candidate) <= 30):
+                    return False
+                if candidate.lower().strip(".-") in self._NOT_A_TOOL:
+                    return False
+                if not re.match(r"^[A-Za-z][A-Za-z0-9+._-]*$", candidate):
+                    return False
+                # Must look like a name rather than a plain lowercase word:
+                # an internal capital, an all-caps run, or a digit.
+                return bool(re.search(r"[A-Z].*[A-Z]|[A-Z][a-z]*[A-Z]|\d", candidate)) or (
+                    candidate[0].isupper() and re.search(r"[-_+.]", candidate) is not None
+                )
+
+            # 1) Leading token before a colon — by far the dominant convention.
+            #    Require real text after the colon so "Chapter 3:" style stubs and
+            #    bare fragments do not match.
+            lead = re.match(r"^\s*([A-Za-z][A-Za-z0-9+._-]{2,29})\s*:\s+\S", text)
+            if lead and _plausible(lead.group(1)):
+                return lead.group(1)
+
+            # 2) Parenthesized name elsewhere in the title. Take the first that
+            #    looks like a named artifact rather than an expansion or an
+            #    ordinary parenthetical.
+            for cand in re.findall(r"\(([^)]{2,30})\)", text):
+                cand = cand.strip()
+                if " " in cand:  # "(and its variants)" — a phrase, not a name
+                    continue
+                if _plausible(cand):
+                    return cand
+        except Exception as e:
+            logger.debug(f"extract_tool_name_from_title failed: {e}")
+        return ""
+
     def _get_file_hash(self, pdf_path: str) -> str:
         """Calculate SHA256 hash of PDF file for caching."""
         try:

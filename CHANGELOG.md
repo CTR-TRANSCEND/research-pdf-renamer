@@ -2,6 +2,19 @@
 
 All notable changes to Research PDF File Renamer are documented here.
 
+## [0.4.9] - 2026-08-19
+
+### Added
+
+- **The tool/software name a paper introduces now leads the keywords in the filename.** A paper titled `MFS-MUnet: Multi-scale Frequency Spatial Mamba U-Net for Medical Image Segmentation` previously had no reliable way to keep `MFS-MUnet` in its filename — the name was only ever a lucky third-priority keyword. It is now extracted explicitly and rendered first, e.g. `Yang-Wei_2024_<journal>_MFS-MUnet-medical-image-segmentation.pdf`. Two layers, matching the author-recovery design from v0.4.8:
+  - A new **optional** `tool_name` field in the extraction prompt and `PaperMetadata` schema, instructing the model to copy a named model/method/software/database the paper contributes, exactly as written, and to return `""` when the paper introduces none. Optional by design — a blank must never discard an otherwise-good extraction (the v0.4.7 lesson).
+  - A deterministic net, `PDFProcessor.extract_tool_name_from_title()`, which recovers the name from the title (leading token before a colon, or a parenthesized name) when the LLM returns nothing. Guarded by a stop-list so article types (`Review:`, `Correction:`, `Commentary:` …) and ordinary lowercase words are never mistaken for a tool name; it returns `""` rather than guessing.
+- `LLMService.build_filename()` places the tool name as the first keyword and de-duplicates it when the model also listed it among the keywords. The keyword slot is now capped at 5 hyphen-separated **words** rather than 5 comma-keywords, so a multi-word name like `MFS-MUnet` cannot be split mid-name by the downstream truncation.
+
+### Unchanged
+
+- No new filename slot, preset, or profile setting: papers that introduce no named tool produce byte-identical filenames to v0.4.8.
+
 ## [0.4.8] - 2026-06-29
 
 ### Fixed
