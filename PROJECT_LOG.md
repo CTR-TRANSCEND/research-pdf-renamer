@@ -7,7 +7,7 @@ live in logs/. Newest first.
 - logs/PROJECT_LOG_2026-H1.md — 5 sessions (2026-04-08 … 2026-04-27)
 
 ## Session Index (active, newest first)
-- 2026-08-19 — v0.4.9: named tool/software (e.g. MFS-MUnet) now leads the filename keywords; deployed + live-verified; stale sudo/docker-group handoff instructions corrected
+- 2026-08-19 — v0.4.9 + v0.4.10: named tool/software (e.g. MFS-MUnet) added to the front of the filename keywords; v0.4.9 shipped a keyword-budget regression (tool name alone, no keywords) caught by the user and fixed in v0.4.10; deployed + live-verified; stale sudo/docker-group handoff instructions corrected
 - 2026-06-29 09:02 CDT — Extraction reliability cont. (v0.4.7 schema tolerance, v0.4.8 deterministic author fallback); diagnosed via live logs, user-confirmed
 - 2026-06-28 17:2x CDT — Extraction bug fix (v0.4.6): metadata-rich PDFs lost author/year/journal due to 3000-char truncation + abstract crowding the prompt; fixed via abstract cap + 8000-char budget + PDF-metadata fallback
 - 2026-06-28 16:27 CDT — Filename placeholder consistency (v0.4.4) + 100-file/5GB limits, decoupled per-file cap, multi-folder + structure-preserving output (v0.4.5)
@@ -16,7 +16,7 @@ live in logs/. Newest first.
 
 ---
 
-## Session 2026-08-19 (v0.4.9 — named tool/software in the filename)
+## Session 2026-08-19 (v0.4.9 + v0.4.10 — named tool/software in the filename)
 
 - **Coding CLI used:** Claude Code CLI (Claude Sonnet 5)
 - **Phase(s):** Session-start reconciliation → feature request → approach approval → implement → verify → deploy → docs
@@ -53,8 +53,32 @@ The handoff stated "`juhur` is not in the `docker` group and sudo needs an inter
 - **Behavioral edge to watch:** the keyword cap changed units (comma-keywords → hyphen-words). A paper whose LLM returns many multi-word keywords may now show slightly fewer of them. The 36/36 parity run covers realistic cases but does not prove this invisible on every input.
 - Keywords still depend entirely on the LLM — the deterministic nets now guarantee author (v0.4.8) and tool name (v0.4.9), but keywords are semantic and unrecoverable by regex. Unchanged low-priority open item.
 
+### v0.4.10 — the same session's regression, reported by the user and fixed (commit `087459c`)
+v0.4.9 shipped broken. Real user output: `Li-Feng_2026_Pattern-Recognition_MFS-MUnet.pdf` — the tool name and **zero** keywords. The request had been "add the name to the beginning of the keywords"; what shipped made the name *compete* with them.
+
+Two compounding errors in one loop:
+1. The tool was inserted into `kw_tokens` **before** the 5-word budget loop, so `MFS-MUnet` consumed 2 of the 5 words and left 3.
+2. The loop used `break`, not `continue`. The paper's first keyword phrase (`multi-scale frequency fusion`, 4 words) did not fit in the remaining 3, so the loop **stopped dead** and discarded every keyword behind it. With a shorter first phrase the bug would have stayed hidden — which is exactly what my own test data did.
+
+Fix: keywords keep their own full 5-word allowance and the tool is prepended on top of it; the fill is greedy again (an over-long phrase contributes its leading words), which reproduces v0.4.8's word-for-word output.
+
+**Second landmine, found while fixing:** `upload.py` re-applied `_truncate_keywords(name, 5)` to `build_filename`'s output, charging the tool against the keyword allowance a *second* time — it would have silently undone the fix. Now applied only to the LLM-fallback filename path, which is the only place it was ever needed.
+
+### Process failure worth keeping
+My v0.4.9 verification measured `build_filename` **in isolation** and reported "36/36 byte-identical", but the shipping pipeline also ran `_truncate_keywords` afterward — so the number was true of a function and false of the product. The gap between *what was tested* and *what ships* is what let this reach the user. The v0.4.10 check compares **end-to-end** pipelines (v0.4.8 `build_filename`+`_truncate_keywords` vs v0.4.10 `build_filename`): 30/30 byte-identical for keyword-only papers, including the multi-word-phrase case v0.4.9 had changed. Test data lesson: my v0.4.9 keyword fixtures were all short phrases, which is precisely why the budget starvation never appeared.
+
+### Verification (v0.4.10)
+- Live in-container, user's exact case: `Li-Feng_2026_Pattern-Recognition_MFS-MUnet-multi-scale-frequency-fusion-mamba.pdf`.
+- Tool-already-in-keywords → rendered once. No-tool control → unchanged.
+- 30/30 no-tool end-to-end parity vs v0.4.8. Health `{"status":"healthy","version":"0.4.10"}`.
+
+### Deploy note (ownership)
+The agent's read-only `git fetch` in the deploy dir created 16 `juhur`-owned files under `.git` — a small drift the agent had said it would avoid. Corrected in place (`chgrp -R hurlab` + group-write on dirs, which juhur may do as a group member); the ref *directory* — the part that matters for a later `hurlab` fetch, since git writes a lock file there and renames — is `hurlab`-owned and group-writable. Working-tree files stayed `hurlab:hurlab` throughout. **Takeaway for next time: even a read-only `git fetch` writes objects; run it as `hurlab` or expect to fix up the group afterward.**
+
 ### Commits (pushed to origin/main)
 - `5a9907d` feat — include the paper's named tool in the filename (v0.4.9)
+- `3c09141` docs — record v0.4.9 deploy; correct stale privileged-ops instructions
+- `087459c` fix — the tool name must not consume the keyword budget (v0.4.10)
 
 ## Session 2026-06-29 09:02 CDT (extraction reliability v0.4.7 + v0.4.8)
 
