@@ -7,6 +7,7 @@ live in logs/. Newest first.
 - logs/PROJECT_LOG_2026-H1.md — 5 sessions (2026-04-08 … 2026-04-27)
 
 ## Session Index (active, newest first)
+- 2026-08-19 — v0.4.9: named tool/software (e.g. MFS-MUnet) now leads the filename keywords; deployed + live-verified; stale sudo/docker-group handoff instructions corrected
 - 2026-06-29 09:02 CDT — Extraction reliability cont. (v0.4.7 schema tolerance, v0.4.8 deterministic author fallback); diagnosed via live logs, user-confirmed
 - 2026-06-28 17:2x CDT — Extraction bug fix (v0.4.6): metadata-rich PDFs lost author/year/journal due to 3000-char truncation + abstract crowding the prompt; fixed via abstract cap + 8000-char budget + PDF-metadata fallback
 - 2026-06-28 16:27 CDT — Filename placeholder consistency (v0.4.4) + 100-file/5GB limits, decoupled per-file cap, multi-folder + structure-preserving output (v0.4.5)
@@ -14,6 +15,46 @@ live in logs/. Newest first.
 - 2026-04-29 CDT — Full harness code review & fix (index mismatch, health 429, LLM extra fields)
 
 ---
+
+## Session 2026-08-19 (v0.4.9 — named tool/software in the filename)
+
+- **Coding CLI used:** Claude Code CLI (Claude Sonnet 5)
+- **Phase(s):** Session-start reconciliation → feature request → approach approval → implement → verify → deploy → docs
+
+### Request
+User wanted the renamed file to keep the app/software name when the title carries one — e.g. `MFS-MUnet: Multi-scale Frequency Spatial Mamba U-Net for Medical Image Segmentation` should yield a filename containing `MFS-MUnet`.
+
+### Why it did not already work
+The prompt listed "specific named tools or algorithms that are the paper's contribution" only as keyword **priority #3** (behind disease and biological system), it was never required, and gpt-oss-20b is non-deterministic (the v0.4.8 finding). So the name appeared by luck and never in a predictable position. There was no `tool_name` concept anywhere in the prompt, schema, or `build_filename`.
+
+### Decision (user-selected from 3 options)
+Render the tool as the **first keyword** rather than adding a dedicated `{tool}` slot. Rationale: no new preset/UI/DB change, works with the format the user already runs, and — decisively — a dedicated slot would add an `Unknown` section to the majority of papers that name no tool (the v0.4.4 placeholder rule). Leading position also protects it from the 5-word truncation.
+
+### Fix (commit `5a9907d`)
+- `llm_service.py` — optional `tool_name` field on `PaperMetadata` (+ `coerce_tool_name`: null/list/`"none"`/`"n/a"` → `""`); prompt item 6 instructing exact-copy extraction with explicit "return empty, do not invent"; JSON example updated.
+- `llm_service.py::build_filename` — tool prepended to keyword tokens, case-insensitive de-dup when the LLM also listed it, and the keyword cap changed from **5 comma-keywords to 5 hyphen-separated words**. That last part is load-bearing: `upload._truncate_keywords` counts hyphen-words, so an uncapped list could split `MFS-MUnet` into a bare `MFS`.
+- `pdf_processor.py` — new `extract_tool_name_from_title()`: leading-token-before-colon, else parenthesized name; `_NOT_A_TOOL` stop-list + shape test (needs an internal capital/all-caps run/digit, or a capitalized token containing `-_+.`). Conservative by design — a wrong tool name in a filename is worse than an absent one.
+- `upload.py` — one backfill beside the existing author/keyword ones: LLM wins, title regex is the net.
+- `.gitignore` — restored the `tmp/` rule that a MoAI template refresh had dropped (it had re-exposed local research PDFs to `git add`).
+
+### Verification
+- **14/14** title cases, including 4 false-positive guards (`Review:`, `Correction:`, `Commentary:`, `Background:`) and the "colon but no tool" case (`…adolescent risk: a longitudinal study`).
+- **36/36 no-tool filenames byte-identical to v0.4.8** — diffed the new `build_filename` against `git show HEAD:backend/services/llm_service.py`, 6 real metadata sets × 6 formats. This was a claim I had made, so it was measured rather than asserted.
+- Schema: v0.4.8-shaped responses (no `tool_name`) still accepted; author-less still rejected (v0.4.8 invariant intact).
+- Live in-container after deploy: `MFS-MUnet` → `Yang-Wei_2024_Neurocomputing_MFS-MUnet-medical-image-segmentation.pdf`; guards return `""`; health `{"status":"healthy","version":"0.4.9"}`.
+
+### Deploy — and a corrected long-standing assumption
+The handoff stated "`juhur` is not in the `docker` group and sudo needs an interactive password → all privileged ops via a script the user runs." **Half of that was stale.** Probed and found `juhur` IS in the `docker` group and `docker ps/build/compose/exec` all work unprivileged. The genuine constraint is narrower: the deploy dir is `hurlab:hurlab`, group-writable, **without a setgid bit** — so a pull run as juhur would create `juhur:juhur` files and silently strip hurlab's group-write, breaking future hurlab pulls. New split: **user runs only `sudo -u hurlab git pull`** (~10 s, ownership preserved — verified `-rw-rw-r-- hurlab hurlab` afterward), **agent runs build + recreate + verify** unprivileged. Handoff §7 rewritten accordingly.
+
+### Problems / notes
+- The `Hurlab` ssh alias points at bare hostname `hurlab`, which does not resolve from the WSL2 dev box; `ssh juhur@hurlab.med.und.edu` works. Recorded in the handoff.
+- `git -C <deploy dir>` as juhur needs `-c safe.directory=<dir>` for read-only inspection (dubious-ownership guard).
+- Docker build prints a harmless `failed to read current commit information` warning from the same guard — cosmetic.
+- **Behavioral edge to watch:** the keyword cap changed units (comma-keywords → hyphen-words). A paper whose LLM returns many multi-word keywords may now show slightly fewer of them. The 36/36 parity run covers realistic cases but does not prove this invisible on every input.
+- Keywords still depend entirely on the LLM — the deterministic nets now guarantee author (v0.4.8) and tool name (v0.4.9), but keywords are semantic and unrecoverable by regex. Unchanged low-priority open item.
+
+### Commits (pushed to origin/main)
+- `5a9907d` feat — include the paper's named tool in the filename (v0.4.9)
 
 ## Session 2026-06-29 09:02 CDT (extraction reliability v0.4.7 + v0.4.8)
 
