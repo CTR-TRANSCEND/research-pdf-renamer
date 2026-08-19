@@ -418,21 +418,31 @@ def _process_files_background(app, job_id, saved_files, llm_svc, file_svc, pdf_p
             # which was inconsistent (sparse names, last-name-only). The LLM's
             # suggested_filename is kept only as a fallback if the rebuild is empty.
             suggested_name = ""
+            built_by_us = False
             try:
                 suggested_name = llm_svc.build_filename(metadata, user_preferences)
+                built_by_us = bool(suggested_name)
             except Exception:
                 suggested_name = ""
             if not suggested_name:
                 suggested_name = metadata.get("suggested_filename", "")
+                built_by_us = False
             if not llm_svc.validate_filename(suggested_name):
                 safe_name = secure_filename(original_filename)
                 name_part = os.path.splitext(safe_name)[0]
                 suggested_name = f"{name_part}_renamed.pdf"
+                built_by_us = False
 
-            # Enforce max 5 keywords: Author_Year_Journal_kw1-kw2-kw3-kw4-kw5.pdf
-            # Split by underscore, find the keywords portion (after Author_Year_Journal),
-            # and truncate if more than 5 hyphen-separated words
-            suggested_name = _truncate_keywords(suggested_name, max_keywords=5)
+            # Enforce max 5 keywords on names we did NOT build: split by
+            # underscore, take the keywords portion (after Author_Year_Journal),
+            # and truncate past 5 hyphen-separated words.
+            # build_filename already budgets its own keyword words and adds the
+            # tool name on top of them, so re-cutting its output here would chop
+            # the tool's words back out of the keywords' allowance — the exact
+            # bug that produced "Li-Feng_2026_Pattern-Recognition_MFS-MUnet.pdf"
+            # with every keyword dropped.
+            if not built_by_us:
+                suggested_name = _truncate_keywords(suggested_name, max_keywords=5)
 
             # Rename file with session isolation
             download_path = file_svc.move_to_downloads(

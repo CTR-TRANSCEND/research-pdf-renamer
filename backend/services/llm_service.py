@@ -978,30 +978,40 @@ Rules for filename:
         if isinstance(kws_raw, list):
             kws_raw = ", ".join(str(k) for k in kws_raw)
         kw_tokens = [_clean(k) for k in re.split(r",", str(kws_raw)) if k.strip()]
-        kw_tokens = [k for k in kw_tokens if k]
+        kw_tokens = [k for k in kw_tokens if k][:5]
 
         # A named tool/method that IS the paper's contribution (e.g. "MFS-MUnet")
-        # leads the keyword slot, so the paper is findable by the name people
-        # actually use for it. Leading position also protects it from the
-        # downstream 5-word truncation in upload._truncate_keywords().
+        # is ADDED to the front of the keywords — it never competes with them for
+        # room. The keyword budget below is theirs alone, so a paper with a tool
+        # name keeps exactly the keywords it would have had without one.
         tool = _clean(metadata.get("tool_name", ""))[:30]
         if tool:
             # The LLM often lists the tool among the keywords too — drop the
             # duplicate rather than rendering the name twice.
             kw_tokens = [k for k in kw_tokens if k.lower() != tool.lower()]
-            kw_tokens.insert(0, tool)
 
-        # Cap at 5 hyphen-separated WORDS (not 5 comma-keywords): the tool name
-        # may itself be multi-word ("MFS-MUnet" is two), and counting words here
-        # keeps upload._truncate_keywords() from splitting it mid-name.
+        # Cap the keywords at 5 hyphen-separated WORDS, filling the budget
+        # greedily: a phrase that does not fit whole contributes its leading
+        # words rather than being skipped. Counting words here (instead of
+        # comma-keywords) is what keeps a multi-word tool name intact, and the
+        # greedy fill reproduces the word-for-word output the old downstream
+        # truncation produced, so keyword-only papers are unaffected.
         capped, word_budget = [], 5
         for token in kw_tokens:
-            cost = token.count("-") + 1
-            if cost > word_budget:
+            if not word_budget:
                 break
-            capped.append(token)
-            word_budget -= cost
-        keywords = "-".join(capped)[:60] or PLACEHOLDER
+            words = token.split("-")
+            if len(words) <= word_budget:
+                capped.append(token)
+                word_budget -= len(words)
+            else:
+                capped.append("-".join(words[:word_budget]))
+                word_budget = 0
+
+        keywords = "-".join(capped)[:60] or ""
+        if tool:
+            keywords = f"{tool}-{keywords}" if keywords else tool
+        keywords = keywords or PLACEHOLDER
 
         if fmt == "Custom" and custom_format:
             name = custom_format

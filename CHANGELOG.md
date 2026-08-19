@@ -2,6 +2,14 @@
 
 All notable changes to Research PDF File Renamer are documented here.
 
+## [0.4.10] - 2026-08-19
+
+### Fixed
+
+- **The tool name no longer eats the keywords.** v0.4.9 shipped with the tool name *competing* for the 5-word keyword budget instead of being added to it, and the budget loop used `break` rather than `continue` — so `MFS-MUnet` consumed 2 of the 5 words, the paper's first keyword phrase (`multi-scale frequency fusion`, 4 words) did not fit in the 3 that remained, and the loop stopped dead and discarded **every** keyword. Real observed output: `Li-Feng_2026_Pattern-Recognition_MFS-MUnet.pdf` — the tool name and nothing else. The tool is now genuinely *added* to the front of the keywords: keywords keep their own full 5-word allowance, filled greedily (a phrase that does not fit whole contributes its leading words), and the tool name sits ahead of them. Same paper now yields `Li-Feng_2026_Pattern-Recognition_MFS-MUnet-multi-scale-frequency-fusion-mamba.pdf`.
+- `upload.py` no longer re-applies `_truncate_keywords()` to filenames that `build_filename()` produced. That downstream 5-word cut counted the tool name against the keyword allowance a second time, undoing the fix; it still guards the LLM-fallback filename path, which is the only place it was ever needed.
+- Verified: keyword-only papers are **30/30 byte-identical end-to-end** to v0.4.8 across 5 metadata shapes x 6 formats — including the multi-word-phrase case that v0.4.9 changed, whose greedy partial fill is now reproduced exactly.
+
 ## [0.4.9] - 2026-08-19
 
 ### Added
